@@ -115,7 +115,7 @@ de tes agendas et événements, et tes tâches Google Tasks (en orange). Lecture
 6. `python3 gcal.py test` : liste tes agendas et la semaine.
 
 Dans `layers.json` : `"url": "calendar?google=1&from=today"`. Options : `tasks=0` (sans les
-tâches), et tu peux ajouter des agendas iCal : `calendar?google=1&ics=…`.
+tâches), `hide=Numéros de semaine,Jours fériés en France` (agendas à masquer sur le bureau), et tu peux ajouter des agendas iCal : `calendar?google=1&ics=…`.
 Déconnexion : `python3 gcal.py logout`.
 
 ### Agenda : `calendar`

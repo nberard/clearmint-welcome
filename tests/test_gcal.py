@@ -133,6 +133,9 @@ class Fetch(Config):
         self.assertEqual([e["title"] for e in evs], ["Courses", "Sport"])   # tâche du lundi, puis mardi
         self.assertTrue(evs[0]["task"])
         self.assertEqual(evs[1]["calendar"], "Moi")
+        with mock.patch.object(gcal, "api_get", fake_get):
+            evs, _ = gcal.events_between(start, datetime(2026, 11, 23, tzinfo=PARIS), hide=["moi"])
+        self.assertEqual([e["title"] for e in evs], ["Courses"])   # agenda « Moi » masqué
 
 
 if __name__ == "__main__":

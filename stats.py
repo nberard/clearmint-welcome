@@ -340,12 +340,13 @@ def api_calendar(q):
     if use_google:
         # API Google : relue toutes les 2 minutes (quasi temps réel), tâches comprises.
         tasks = q.get("tasks", ["1"])[0] != "0"
+        hide = tuple(h for vals in q.get("hide", []) for h in vals.split(","))
 
         def google_week():
-            evs, errs = gcal.events_between(start, end, with_tasks=tasks)
+            evs, errs = gcal.events_between(start, end, with_tasks=tasks, hide=hide)
             return {"events": evs, "errors": errs}
 
-        g = cached(("google", start.isoformat(), weeks, tasks), google_week, ttl=120)
+        g = cached(("google", start.isoformat(), weeks, tasks, hide), google_week, ttl=120)
         out["events"] += g.get("events", [])
         out["errors"] += g.get("errors", [])
         if g.get("error"):

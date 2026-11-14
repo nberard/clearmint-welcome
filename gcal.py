@@ -214,13 +214,18 @@ def convert_task(t):
             "color": TASK_COLOR, "task": True, "done": t.get("status") == "completed"}
 
 
-def events_between(start, end, with_tasks=True):
-    """Événements de tous les agendas affichés + tâches à échéance dans la période."""
+def events_between(start, end, with_tasks=True, hide=()):
+    """Événements de tous les agendas affichés + tâches à échéance dans la période.
+    hide : noms d'agendas à ne pas afficher sur le bureau (ex. « Numéros de semaine »)."""
+    hidden = {h.strip().lower() for h in hide if h.strip()}
     out, errors = [], []
     params = {"timeMin": start.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
               "timeMax": end.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
               "singleEvents": "true", "orderBy": "startTime", "maxResults": 250}
     for cal in calendars():
+        name = (cal.get("summaryOverride") or cal.get("summary", "")).strip().lower()
+        if name in hidden:
+            continue
         cid = urllib.parse.quote(cal["id"], safe="")
         try:
             for ev in paged(f"{CAL_API}/calendars/{cid}/events", params):
