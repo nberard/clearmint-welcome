@@ -20,6 +20,7 @@ Options :
   css           style ajouté à la page : thème intégré (« grafana ») ou fichier .css
 """
 import json
+import re
 from dataclasses import dataclass, fields
 from typing import Optional
 from urllib.parse import urlsplit, urlunsplit
@@ -166,11 +167,19 @@ def load_config(path):
     """Fichier JSON : une liste de calques, ou {"layers": [...]}."""
     try:
         with open(path, encoding="utf-8") as f:
-            data = json.load(f)
+            text = f.read()
     except OSError as e:
         raise LayerError(f"impossible de lire {path} : {e}")
+    try:
+        data = json.loads(text)
     except json.JSONDecodeError as e:
-        raise LayerError(f"{path} n'est pas du JSON valide : {e}")
+        # Erreur fréquente en collant des blocs : une virgule en trop avant } ou ].
+        fixed = re.sub(r",(\s*[}\]])", r"\1", text)
+        try:
+            data = json.loads(fixed)
+        except json.JSONDecodeError:
+            raise LayerError(f"{path} n'est pas du JSON valide : {e}")
+        print(f"Attention : virgule en trop dans {path} (ligne {e.lineno}), ignorée.")
     items = data.get("layers") if isinstance(data, dict) else data
     if not isinstance(items, list) or not items:
         raise LayerError(f"{path} : il faut une liste de calques")

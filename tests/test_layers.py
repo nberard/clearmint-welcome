@@ -144,6 +144,20 @@ class Config(unittest.TestCase):
             self.assertEqual(layers[1].opacity, 0.8)
             self.assertTrue(layers[1].through)
 
+    def test_trailing_commas_tolerated(self):
+        path = self.write({})
+        with open(path, "w", encoding="utf-8") as f:
+            f.write('{"layers": [\n  {"url": "grid"},\n  {"url": "stats", "x": "1%",},\n],\n}\n')
+        layers = L.load_config(path)
+        self.assertEqual([l.url for l in layers], ["builtin:/grid.html", "builtin:/stats.html"])
+
+    def test_real_errors_still_reported(self):
+        path = self.write({})
+        with open(path, "w", encoding="utf-8") as f:
+            f.write('{"layers": [ {"url": "grid"} {"url": "stats"} ]}')
+        with self.assertRaises(L.LayerError):
+            L.load_config(path)
+
     def test_example_file_is_valid(self):
         path = os.path.join(os.path.dirname(__file__), "..", "layers.example.json")
         self.assertGreaterEqual(len(L.load_config(path)), 2)
