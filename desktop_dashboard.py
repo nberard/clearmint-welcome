@@ -22,9 +22,32 @@ import argparse
 import os
 import signal
 import sys
+import time
 
-import cairo
-import gi
+
+def log_to_file():
+    """Sans terminal (démarrage automatique), tout est écrit dans un fichier journal.
+
+    Placé avant les autres imports pour capter aussi une erreur au chargement de GTK.
+    """
+    if sys.stdout is not None and sys.stdout.isatty():
+        return
+    folder = os.path.expanduser("~/.cache/desktop-dashboard")
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, "dashboard.log")
+    if os.path.exists(path) and os.path.getsize(path) > 1_000_000:
+        os.replace(path, path + ".old")
+    f = open(path, "a", buffering=1, encoding="utf-8")
+    os.dup2(f.fileno(), 1)  # aussi les messages de GTK et WebKit
+    os.dup2(f.fileno(), 2)
+    sys.stdout = sys.stderr = f
+    print(f"\n===== {time.strftime('%Y-%m-%d %H:%M:%S')} démarrage : {' '.join(sys.argv)}")
+
+
+log_to_file()
+
+import cairo  # noqa: E402
+import gi  # noqa: E402
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 gi.require_version("WebKit2", "4.1")
@@ -32,8 +55,8 @@ gi.require_version("Secret", "1")
 from gi.repository import Gdk, GLib, Gtk, Secret, WebKit2
 gi.require_foreign("cairo")
 
-import layers as L
-import stats
+import layers as L  # noqa: E402
+import stats  # noqa: E402
 
 APP_ID = "desktop-dashboard"
 DATA_DIR = os.path.join(os.path.expanduser("~/.local/share"), APP_ID)
