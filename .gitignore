@@ -3,3 +3,6 @@ __pycache__/
 layers.json
 imports/
 *.ics
+google-oauth-client.json
+client_secret_*.json
+google-token.json
