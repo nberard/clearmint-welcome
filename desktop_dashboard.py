@@ -491,6 +491,42 @@ def make_window(monitor, context, layer_list, auth, test_mode, screen):
     return win
 
 
+LOCK_PATH = os.path.expanduser("~/.cache/desktop-dashboard/running.pid")
+
+
+def single_instance(replace=False):
+    """Un seul tableau de bord à la fois (sinon deux copies tournent l'une sur l'autre et
+    une ancienne version peut rester affichée). Avec replace, l'ancienne copie est arrêtée."""
+    import fcntl
+    os.makedirs(os.path.dirname(LOCK_PATH), exist_ok=True)
+    f = open(LOCK_PATH, "a+")
+    for _ in range(50):
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except OSError:
+            f.seek(0)
+            pid = f.read().strip()
+            if not replace:
+                sys.exit(f"Le tableau de bord tourne déjà (pid {pid or '?'}). "
+                         "Relance avec --replace pour le remplacer.")
+            if pid.isdigit():
+                print(f"Arrêt de l'ancienne copie (pid {pid})…")
+                try:
+                    os.kill(int(pid), signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                pid = ""
+            time.sleep(0.2)
+    else:
+        sys.exit("Impossible d'arrêter l'ancienne copie du tableau de bord.")
+    f.seek(0)
+    f.truncate()
+    f.write(str(os.getpid()))
+    f.flush()
+    return f  # garder le fichier ouvert : le verrou dure tant que le programme tourne
+
+
 def main():
     ap = argparse.ArgumentParser(
         description="Pages web superposées en fond d'écran interactif.",
@@ -504,6 +540,8 @@ def main():
     ap.add_argument("--forget", action="store_true", help="oublie les mots de passe enregistrés")
     ap.add_argument("--window", action="store_true",
                     help="test : une fenêtre normale au lieu du fond d'écran")
+    ap.add_argument("--replace", action="store_true",
+                    help="arrête le tableau de bord déjà lancé et prend sa place")
     args = ap.parse_args()
 
     try:
@@ -530,8 +568,11 @@ def main():
             print(f"Mot de passe oublié pour {user}@{host}.")
         return
 
-    # Ctrl+C quitte proprement au lieu d'afficher une erreur.
+    lock = single_instance(args.replace)  # noqa: F841 (gardé ouvert jusqu'à la fin)
+
+    # Ctrl+C (ou un arrêt demandé par --replace) quitte proprement.
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, Gtk.main_quit)
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, Gtk.main_quit)
 
     if builtins:
         # Pages intégrées (« stats ») : servies par un petit serveur local.

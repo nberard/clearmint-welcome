@@ -144,6 +144,16 @@ L'adresse est relue toutes les 10 minutes. Un fichier `.ics` exporté marche aus
   `--forget` l'efface.
 - **Page de connexion (formulaire)** : les cookies sont conservés entre deux démarrages.
 
+## Relancer
+
+Un seul tableau de bord tourne à la fois. Après un `git pull` ou un changement de
+`layers.json`, relance avec `--replace` : l'ancienne copie s'arrête et la nouvelle prend
+sa place.
+
+```bash
+python3 desktop_dashboard.py --config layers.json --replace
+```
+
 ## Démarrage automatique
 
 `~/.config/autostart/desktop-dashboard.desktop` :
