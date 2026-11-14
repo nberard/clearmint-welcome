@@ -22,8 +22,8 @@ python3 desktop_dashboard.py https://nico@health.touplitoui.me
 # plusieurs pages empilées : la première est le fond, les suivantes vont par-dessus
 python3 desktop_dashboard.py \
   https://nico@health.touplitoui.me \
-  "http://localhost:8080/hud.html|x=70%,y=5%,w=28%,h=40%,opacity=0.85" \
-  "http://localhost:8080/fx.html|through"
+  "http://localhost:8080/hud.html|x=70%,y=5%,w=28%,h=40%,opacity=0.85,transparent" \
+  "http://localhost:8080/fx.html|transparent,through"
 
 # avec le panneau système intégré (météo, CPU, mémoire, réseau, disques)
 python3 desktop_dashboard.py \
@@ -47,7 +47,7 @@ noms (voir `layers.example.json`).
 | `x`, `y` | position, en pixels (`300`) ou en % de l'écran (`70%`) | `0` |
 | `w`, `h` | taille, en pixels ou en % | `100%` |
 | `opacity` | opacité de 0 à 1 | `1` |
-| `transparent` | fond de page transparent, pour voir les calques du dessous | oui, sauf pour le 1er calque |
+| `transparent` | fond de page transparent, pour voir les calques du dessous | oui pour `stats`, `clock`, `procs` ; non pour les sites |
 | `through` | les clics traversent le calque vers ceux du dessous | non |
 | `zoom` | zoom de la page | `1` |
 | `refresh` | recharge la page toutes les N secondes | `0` (jamais) |
@@ -57,11 +57,30 @@ noms (voir `layers.example.json`).
   blanc : réduis-les avec `x/y/w/h` ou baisse leur `opacity`.
 - Les calques transparents sont réunis dans une seule page (dans des cadres) et
   affichés **au-dessus** des calques opaques. Certains sites refusent d'être affichés
-  dans un cadre (en-tête `X-Frame-Options`) : pour ceux-là, mets `transparent=0`.
+  dans un cadre (en-tête `X-Frame-Options`, Grafana par défaut) : laisse-les opaques.
 - Les clics vont au calque transparent sous la souris ; là où il n'y en a pas (ou
   sur un calque `through`), ils passent aux calques du dessous.
 
-### Panneau système intégré : `stats`
+### Panneaux intégrés
+
+| Nom | Contenu |
+|---|---|
+| `stats` | météo, CPU, mémoire, réseau, disques |
+| `clock` | heure, date, salutation (`clock?name=Nico`), infos système, batterie |
+| `procs` | programmes les plus gourmands en CPU et en mémoire |
+| `grid` | fond animé (opaque) : à mettre en premier |
+
+Exemple : fond animé, Grafana à droite, panneaux à gauche :
+
+```bash
+python3 desktop_dashboard.py grid \
+  "https://nico@health.touplitoui.me|x=50%,w=50%" \
+  "stats?city=Nîmes|x=1%,y=2%,w=47%,h=20%" \
+  "clock?name=Nico|x=1%,y=24%,w=47%,h=22%" \
+  "procs|x=1%,y=48%,w=47%,h=48%"
+```
+
+### Panneau système : `stats`
 
 Météo, CPU (charge et température), mémoire, réseau, disques (activité et place
 libre sur `/` et `/home`), en style HUD sur fond transparent, mis à jour chaque

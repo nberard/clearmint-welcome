@@ -1,0 +1,39 @@
+/* Style commun des panneaux HUD (clock, procs). */
+:root {
+  --hud: #3ef2ff;
+  --hud-dim: rgba(62, 242, 255, .55);
+  --hud-faint: rgba(62, 242, 255, .14);
+  --accent: #c77dff;
+  --warn: #ffb547;
+  --hot: #ff4d6d;
+  --panel: rgba(4, 18, 30, .55);
+}
+* { box-sizing: border-box; margin: 0; }
+html, body { height: 100%; background: transparent; overflow: hidden; }
+body {
+  font-family: "DejaVu Sans Mono", "Ubuntu Mono", monospace;
+  color: var(--hud);
+  text-shadow: 0 0 6px rgba(62, 242, 255, .6);
+  padding: 6px;
+}
+.card {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--hud-dim);
+  box-shadow: 0 0 12px rgba(62, 242, 255, .18), inset 0 0 18px rgba(62, 242, 255, .06);
+  padding: 10px 14px;
+  min-width: 0;
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+}
+.card::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(0deg, transparent 0 2px, rgba(62, 242, 255, .04) 2px 3px);
+}
+.label { font-size: 11px; letter-spacing: .2em; color: var(--hud-dim); }
+.dim { color: var(--hud-dim); }
+.warn { color: var(--warn); text-shadow: 0 0 6px rgba(255, 181, 71, .6); }
+.hot { color: var(--hot); text-shadow: 0 0 6px rgba(255, 77, 109, .7); }
+.bar { height: 4px; background: var(--hud-faint); position: relative; }
+.bar > i { position: absolute; inset: 0 auto 0 0; background: var(--hud); box-shadow: 0 0 6px var(--hud); }
+.bar > i.accent { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+.offline { opacity: .35; }

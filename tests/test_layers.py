@@ -68,11 +68,16 @@ class Builtin(unittest.TestCase):
 
 
 class Finalize(unittest.TestCase):
-    def test_only_first_layer_opaque_by_default(self):
+    def test_websites_opaque_by_default(self):
         layers = L.finalize([L.parse_spec("http://a.example"),
                              L.parse_spec("http://b.example"),
-                             L.parse_spec("http://c.example|transparent=0")])
-        self.assertEqual([l.transparent for l in layers], [False, True, False])
+                             L.parse_spec("http://c.example|transparent")])
+        self.assertEqual([l.transparent for l in layers], [False, False, True])
+
+    def test_builtin_panels_transparent_grid_opaque(self):
+        layers = L.finalize([L.parse_spec(s) for s in
+                             ("grid", "stats?city=Nîmes", "clock", "procs", "grid|transparent")])
+        self.assertEqual([l.transparent for l in layers], [False, True, True, True, True])
 
 
 class Place(unittest.TestCase):

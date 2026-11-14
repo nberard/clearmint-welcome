@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Processus</title>
+<link rel="stylesheet" href="hud.css">
+<style>
+  body { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .card { display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+  .head { display: flex; justify-content: space-between; align-items: baseline; }
+  .rows { display: flex; flex-direction: column; gap: clamp(4px, 1.6vh, 12px); }
+  .row { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; font-size: clamp(10px, 2.6vh, 15px); }
+  .row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .name em { font-style: normal; color: var(--hud-dim); font-size: .8em; }
+  .row .bar { grid-column: 1 / -1; }
+  .empty { color: var(--hud-dim); font-size: 12px; }
+</style>
+</head>
+<body>
+  <section class="card">
+    <div class="head"><span class="label">PROCESSUS · CPU</span><span class="label" id="total"></span></div>
+    <div class="rows" id="cpu"><span class="empty">mesure en cours…</span></div>
+  </section>
+  <section class="card">
+    <div class="head"><span class="label">PROCESSUS · MÉMOIRE</span><span class="label" id="memtotal"></span></div>
+    <div class="rows" id="mem"><span class="empty">mesure en cours…</span></div>
+  </section>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+function fmtBytes(n) {
+  const u = ["o", "Ko", "Mo", "Go", "To"];
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return (n >= 100 || i === 0 ? n.toFixed(0) : n.toFixed(1)) + " " + u[i];
+}
+function rows(items, value, label, max, cls) {
+  if (!items.length) return '<span class="empty">rien à signaler</span>';
+  return items.map((p) => {
+    const pct = Math.min(100, 100 * value(p) / max);
+    const count = p.count > 1 ? ` <em>×${p.count}</em>` : "";
+    return `<div class="row"><span class="name">${esc(p.name)}${count}</span><b>${label(p)}</b>` +
+           `<div class="bar"><i class="${cls}" style="width:${pct}%"></i></div></div>`;
+  }).join("");
+}
+async function tick() {
+  try {
+    const s = await (await fetch("/api/stats", { cache: "no-store" })).json();
+    if (!s.procs || !s.procs.mem) return;
+    document.body.classList.remove("offline");
+    const cores = s.cpu.cores || 1;
+    $("total").textContent = s.procs.total + " processus";
+    $("cpu").innerHTML = rows(s.procs.cpu, (p) => p.cpu, (p) => p.cpu.toFixed(1) + "%", 100 * cores, "");
+    $("memtotal").textContent = fmtBytes(s.mem.used) + " utilisés";
+    $("mem").innerHTML = rows(s.procs.mem, (p) => p.mem, (p) => fmtBytes(p.mem), s.mem.total, "accent");
+  } catch (e) {
+    document.body.classList.add("offline");
+  }
+}
+tick();
+setInterval(tick, 2000);
+</script>
+</body>
+</html>

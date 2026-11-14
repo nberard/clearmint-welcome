@@ -6,14 +6,14 @@ Un calque en ligne de commande s'écrit « URL|option,option=valeur,... », par 
   "https://nico@health.touplitoui.me"
   "http://localhost:8080/hud.html|x=70%,y=5%,w=28%,h=40%,opacity=0.85"
   "http://localhost:8080/fx.html|through"
-  "stats?city=Paris|x=1%,y=2%,w=460,h=230"     (panneau intégré : CPU, mémoire, réseau...)
+  "stats?city=Nîmes|x=1%,y=2%,w=640,h=200"     (panneaux intégrés : stats, clock, procs, grid)
 
 Options :
   x, y, w, h    position et taille, en pixels (300) ou en pourcentage de l'écran (50%)
                 (défaut : tout l'écran)
   opacity       opacité du calque, de 0 à 1 (défaut : 1)
   transparent   fond de page transparent, pour voir les calques du dessous
-                (défaut : oui pour tous les calques sauf le premier)
+                (défaut : oui pour les panneaux intégrés stats/clock/procs, non sinon)
   through       les clics traversent ce calque vers ceux du dessous (défaut : non)
   zoom          zoom de la page (défaut : 1)
   refresh       recharge la page toutes les N secondes (défaut : 0 = jamais)
@@ -56,7 +56,12 @@ class Layer:
 
 
 BUILTIN = "builtin:"
-BUILTIN_PAGES = {"stats": "/stats.html"}
+BUILTIN_PAGES = {
+    "stats": "/stats.html",   # météo, CPU, mémoire, réseau, disques
+    "clock": "/clock.html",   # heure, date, infos système
+    "procs": "/procs.html",   # programmes les plus gourmands
+    "grid": "/grid.html",     # fond animé style HUD (opaque, à mettre en premier)
+}
 
 
 def normalize_url(url):
@@ -164,11 +169,16 @@ def load_config(path):
     return [from_dict(d) for d in items]
 
 
+TRANSPARENT_BUILTINS = {"/stats.html", "/clock.html", "/procs.html"}
+
+
 def finalize(layers):
-    """Règles par défaut : seul le premier calque a un fond opaque."""
-    for i, layer in enumerate(layers):
+    """Règle par défaut : seuls les panneaux intégrés (stats, clock, procs) sont
+    transparents. Les sites web sont opaques sauf si on ajoute « transparent »."""
+    for layer in layers:
         if layer.transparent is None:
-            layer.transparent = i > 0
+            page = layer.url[len(BUILTIN):].split("?", 1)[0] if layer.builtin else None
+            layer.transparent = page in TRANSPARENT_BUILTINS
     return layers
 
 

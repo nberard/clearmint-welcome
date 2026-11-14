@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Clock</title>
+<link rel="stylesheet" href="hud.css">
+<style>
+  .card { height: 100%; display: flex; align-items: center; gap: 4vw; }
+  .time { font-size: clamp(36px, 42vh, 150px); font-weight: bold; line-height: 1; letter-spacing: .02em; }
+  .time small { font-size: .35em; color: var(--hud-dim); margin-left: .15em; }
+  .left { display: flex; flex-direction: column; gap: 1vh; }
+  .date { font-size: clamp(12px, 9vh, 26px); text-transform: capitalize; }
+  .hello { font-size: clamp(10px, 6vh, 16px); color: var(--accent); text-shadow: 0 0 6px rgba(199,125,255,.6); }
+  .info { display: grid; grid-template-columns: auto 1fr; gap: .6vh 1.2em; font-size: clamp(10px, 6vh, 14px);
+          margin-left: auto; align-self: center; }
+  .info span:nth-child(odd) { color: var(--hud-dim); letter-spacing: .15em; font-size: .8em; align-self: center; }
+</style>
+</head>
+<body>
+  <section class="card">
+    <div class="left">
+      <div class="hello" id="hello"></div>
+      <div class="time" id="time">--:--</div>
+      <div class="date" id="date"></div>
+    </div>
+    <div class="info">
+      <span>SYSTÈME</span><b id="distro">—</b>
+      <span>MACHINE</span><b id="host">—</b>
+      <span>EN MARCHE</span><b id="uptime">—</b>
+      <span>CHARGE</span><b id="load">—</b>
+      <span id="bat-label">BATTERIE</span><b id="bat">—</b>
+    </div>
+  </section>
+<script>
+const $ = (id) => document.getElementById(id);
+const name = new URLSearchParams(location.search).get("name");
+const pad = (n) => String(n).padStart(2, "0");
+
+function greeting(h) {
+  const g = h < 5 ? "Bonne nuit" : h < 12 ? "Bonjour" : h < 18 ? "Bon après-midi" : h < 22 ? "Bonsoir" : "Bonne nuit";
+  return name ? `${g}, ${name}` : g;
+}
+function clock() {
+  const d = new Date();
+  $("time").innerHTML = `${pad(d.getHours())}:${pad(d.getMinutes())}<small>${pad(d.getSeconds())}</small>`;
+  $("date").textContent = d.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  $("hello").textContent = greeting(d.getHours());
+}
+function duration(s) {
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  return d ? `${d} j ${h} h` : h ? `${h} h ${pad(m)}` : `${m} min`;
+}
+async function system() {
+  try {
+    const s = (await (await fetch("/api/stats", { cache: "no-store" })).json()).system;
+    if (!s) return;
+    document.body.classList.remove("offline");
+    $("distro").textContent = s.distro || "Linux";
+    $("host").textContent = s.host;
+    $("uptime").textContent = duration(s.uptime);
+    $("load").textContent = s.load.join("  ");
+    if (s.battery) {
+      const b = s.battery, charging = /charg/i.test(b.status) && !/dis/i.test(b.status);
+      $("bat").textContent = `${b.percent}%${charging ? " ⚡" : ""}`;
+      $("bat").className = b.percent <= 10 ? "hot" : b.percent <= 25 ? "warn" : "";
+    } else {
+      $("bat").style.display = $("bat-label").style.display = "none";
+    }
+  } catch (e) {
+    document.body.classList.add("offline");
+  }
+}
+clock(); system();
+setInterval(clock, 1000);
+setInterval(system, 5000);
+</script>
+</body>
+</html>

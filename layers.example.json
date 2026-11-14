@@ -17,10 +17,12 @@
       "w": "28%",
       "h": "40%",
       "opacity": 0.85,
+      "transparent": true,
       "refresh": 60
     },
     {
       "url": "http://localhost:8080/fx.html",
+      "transparent": true,
       "through": true
     }
   ]

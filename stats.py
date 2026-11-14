@@ -120,6 +120,65 @@ def mounts():
     return out
 
 
+CLK_TCK = os.sysconf("SC_CLK_TCK")
+PAGE_SIZE = os.sysconf("SC_PAGE_SIZE")
+
+
+def process_times():
+    """{pid: (nom, temps CPU en ticks, mémoire en octets)} pour tous les processus."""
+    out = {}
+    for d in os.listdir("/proc"):
+        if not d.isdigit():
+            continue
+        raw = _read(f"/proc/{d}/stat")
+        if not raw:
+            continue  # processus terminé entre-temps
+        name = raw[raw.find("(") + 1:raw.rfind(")")]
+        f = raw[raw.rfind(")") + 2:].split()
+        if len(f) < 22:
+            continue
+        out[int(d)] = (name, int(f[11]) + int(f[12]), int(f[21]) * PAGE_SIZE)
+    return out
+
+
+def top_processes(prev, cur, dt, n=8):
+    """Programmes les plus gourmands, regroupés par nom (tous les « firefox » ensemble)."""
+    groups = {}
+    for pid, (name, ticks, rss) in cur.items():
+        g = groups.setdefault(name, {"name": name, "cpu": 0.0, "mem": 0, "count": 0})
+        if pid in prev and prev[pid][0] == name:
+            g["cpu"] += max(0, ticks - prev[pid][1]) / CLK_TCK / dt * 100
+        g["mem"] += rss
+        g["count"] += 1
+    items = list(groups.values())
+    for g in items:
+        g["cpu"] = round(g["cpu"], 1)
+    by_cpu = sorted((g for g in items if g["cpu"] > 0), key=lambda g: -g["cpu"])[:n]
+    by_mem = sorted(items, key=lambda g: -g["mem"])[:n]
+    return {"cpu": by_cpu, "mem": by_mem, "total": len(cur)}
+
+
+def battery():
+    for bat in sorted(glob.glob("/sys/class/power_supply/BAT*")):
+        cap = _read(f"{bat}/capacity").strip()
+        if cap:
+            return {"percent": int(cap), "status": _read(f"{bat}/status").strip()}
+    return None
+
+
+def system_info():
+    up = _read("/proc/uptime").split()
+    load = os.getloadavg()
+    distro = ""
+    for line in _read("/etc/os-release").splitlines():
+        if line.startswith("PRETTY_NAME="):
+            distro = line.split("=", 1)[1].strip('"')
+    u = os.uname()
+    return {"host": u.nodename, "kernel": u.release, "distro": distro,
+            "uptime": float(up[0]) if up else 0, "load": [round(x, 2) for x in load],
+            "battery": battery()}
+
+
 class Sampler(threading.Thread):
     """Mesure chaque seconde et garde le dernier relevé."""
 
@@ -131,6 +190,7 @@ class Sampler(threading.Thread):
 
     def run(self):
         prev_cpu, prev_net, prev_disk, prev_t = cpu_times(), net_bytes(), disk_bytes(), time.time()
+        prev_procs, prev_procs_t, procs, tick = process_times(), time.time(), {}, 0
         while True:
             time.sleep(self.interval)
             cpu, net, disk, now = cpu_times(), net_bytes(), disk_bytes(), time.time()
@@ -147,6 +207,13 @@ class Sampler(threading.Thread):
                          "write": max(0, (disk[1] - prev_disk[1]) / dt),
                          "mounts": mounts()},
             }
+            tick += 1
+            if tick % 2 == 0:  # processus : toutes les 2 s, c'est la mesure la plus lourde
+                cur = process_times()
+                procs = top_processes(prev_procs, cur, max(now - prev_procs_t, 1e-3))
+                prev_procs, prev_procs_t = cur, now
+            sample["procs"] = procs
+            sample["system"] = system_info()
             with self.lock:
                 self.latest = sample
             prev_cpu, prev_net, prev_disk, prev_t = cpu, net, disk, now
