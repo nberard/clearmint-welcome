@@ -23,14 +23,17 @@ import os
 import signal
 import sys
 
+import cairo
 import gi
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 gi.require_version("WebKit2", "4.1")
 gi.require_version("Secret", "1")
 from gi.repository import Gdk, GLib, Gtk, Secret, WebKit2
+gi.require_foreign("cairo")
 
 import layers as L
+import stats
 
 APP_ID = "desktop-dashboard"
 DATA_DIR = os.path.join(os.path.expanduser("~/.local/share"), APP_ID)
@@ -210,33 +213,45 @@ def install_css():
         Gdk.Screen.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
 
+def connect_view(view, auth, name):
+    view.connect("authenticate", auth.on_authenticate)
+    view.connect("load-changed", on_load_changed, name)
+    view.connect("load-failed", on_load_failed, name)
+
+
 def make_view(layer, context, auth, name):
+    """Vue pour un calque opaque (le fond, ou une page à fond plein)."""
     content = WebKit2.UserContentManager()
     if layer.opacity < 1:
-        # Opacité appliquée dans la page : avec l'opacité GTK, le fond transparent
-        # devient blanc.
         content.add_style_sheet(WebKit2.UserStyleSheet(
             f"html {{ opacity: {layer.opacity} !important; }}",
             WebKit2.UserContentInjectedFrames.TOP_FRAME,
             WebKit2.UserStyleLevel.USER, None, None))
     view = WebKit2.WebView(web_context=context, user_content_manager=content)
-    if layer.transparent:
-        # Fond de page transparent : les calques du dessous restent visibles là où la
-        # page ne dessine rien (la page elle-même doit avoir un fond transparent).
-        view.set_background_color(Gdk.RGBA(0, 0, 0, 0))
     if layer.zoom != 1:
         view.set_zoom_level(layer.zoom)
-    view.connect("authenticate", auth.on_authenticate)
-    view.connect("load-changed", on_load_changed, name)
-    view.connect("load-failed", on_load_failed, name)
+    connect_view(view, auth, name)
     if layer.refresh:
         GLib.timeout_add_seconds(layer.refresh, lambda: (view.reload(), True)[1])
     view.load_uri(layer.url)
     return view
 
 
-def place_layers(overlay, views, width, height):
-    """Positionne chaque calque (en pixels) pour une zone width x height."""
+def make_composer(layers, context, auth, name):
+    """Une seule vue plein écran, transparente, qui empile tous les calques transparents.
+
+    Plusieurs vues WebKit transparentes empilées dans GTK laissent des zones noires
+    quand elles se redessinent ; dans une seule page, le navigateur gère tout.
+    """
+    view = WebKit2.WebView(web_context=context)
+    view.set_background_color(Gdk.RGBA(0, 0, 0, 0))
+    connect_view(view, auth, name)
+    view.load_html(L.composer_html(layers), "http://127.0.0.1/")
+    return view
+
+
+def place_layers(views, width, height):
+    """Positionne chaque vue opaque (en pixels) pour une zone width x height."""
     for layer, view in views:
         if L.is_fullscreen(layer, width, height):
             view.set_halign(Gtk.Align.FILL)
@@ -251,6 +266,27 @@ def place_layers(overlay, views, width, height):
             view.set_margin_start(x)
             view.set_margin_top(y)
             view.set_size_request(w, h)
+
+
+def set_click_area(view, overlay, rects):
+    """Le calque n'accepte les clics que dans ces rectangles ; ailleurs, ils passent dessous.
+
+    On découpe la zone de clic de la vue et des fenêtres GDK qui l'entourent (WebKit
+    reçoit les clics par sa propre fenêtre, que le réglage « pass-through » de GTK
+    n'atteint pas).
+    """
+    region = cairo.Region([cairo.RectangleInt(x, y, w, h) for x, y, w, h in rects])
+    gdk_win = view.get_window()
+    top = overlay.get_window()
+    while gdk_win is not None and gdk_win != top:
+        if os.environ.get("DASHBOARD_DEBUG"):
+            print(f"[clics] zone {rects} sur {gdk_win.get_width()}x{gdk_win.get_height()}")
+        gdk_win.input_shape_combine_region(region, 0, 0)
+        gdk_win = gdk_win.get_parent()
+
+
+def clickable_rects(layers, width, height):
+    return [L.place(l, width, height) for l in layers if not l.through]
 
 
 def make_window(monitor, context, layer_list, auth, test_mode, screen):
@@ -270,20 +306,44 @@ def make_window(monitor, context, layer_list, auth, test_mode, screen):
         win.move(geo.x, geo.y)
     win.set_default_size(width, height)
 
-    # Le fond noir sert de base ; tous les calques sont empilés dessus, dans l'ordre.
+    # Fond noir, puis les calques opaques dans l'ordre, puis tous les calques
+    # transparents réunis dans une seule vue, au-dessus.
     overlay = Gtk.Overlay()
     base = Gtk.Box()
     base.get_style_context().add_class("dashboard-base")
     overlay.add(base)
 
+    opaque = [(i, l) for i, l in enumerate(layer_list) if not l.transparent]
+    transparent = [(i, l) for i, l in enumerate(layer_list) if l.transparent]
+
     views = []
-    for i, layer in enumerate(layer_list):
-        name = f"{screen} / calque {i + 1}"
-        view = make_view(layer, context, auth, name)
+    for i, layer in opaque:
+        view = make_view(layer, context, auth, f"{screen} / calque {i + 1}")
         overlay.add_overlay(view)
-        overlay.set_overlay_pass_through(view, layer.through)
+        if layer.through:
+            view.connect_after("map", lambda v: set_click_area(v, overlay, []))
         views.append((layer, view))
-    place_layers(overlay, views, width, height)
+    place_layers(views, width, height)
+
+    composer = None
+    if transparent:
+        names = ", ".join(str(i + 1) for i, _ in transparent)
+        composer = make_composer([l for _, l in transparent], context, auth,
+                                 f"{screen} / calques transparents {names}")
+        overlay.add_overlay(composer)
+        # Clics : seulement sur les panneaux transparents cliquables, le reste passe
+        # aux calques du dessous. Recalculé quand la taille change.
+        t_layers = [l for _, l in transparent]
+
+        def apply_click_area(view, *_):
+            if view.get_realized():
+                alloc = view.get_allocation()
+                set_click_area(view, overlay,
+                               clickable_rects(t_layers, alloc.width, alloc.height))
+
+        composer.connect_after("realize", apply_click_area)
+        composer.connect_after("map", apply_click_area)
+        composer.connect_after("size-allocate", apply_click_area)
 
     # La fenêtre de test peut être redimensionnée : on recalcule les positions.
     size = {"wh": (width, height)}
@@ -291,7 +351,7 @@ def make_window(monitor, context, layer_list, auth, test_mode, screen):
     def on_configure(_win, event):
         if (event.width, event.height) != size["wh"]:
             size["wh"] = (event.width, event.height)
-            place_layers(overlay, views, event.width, event.height)
+            place_layers(views, event.width, event.height)
         return False
 
     win.connect("configure-event", on_configure)
@@ -301,7 +361,7 @@ def make_window(monitor, context, layer_list, auth, test_mode, screen):
         win.stick()  # visible sur tous les espaces de travail
     print(f"[{screen}] fenêtre {'de test' if test_mode else 'bureau'} "
           f"{width}x{height} à ({geo.x},{geo.y}), {len(layer_list)} calque(s)")
-    for i, (layer, _) in enumerate(views):
+    for i, layer in enumerate(layer_list):
         x, y, w, h = L.place(layer, width, height)
         print(f"  calque {i + 1}: {layer.url}  {w}x{h} à ({x},{y})"
               f"{', opacité ' + str(layer.opacity) if layer.opacity < 1 else ''}"
@@ -314,7 +374,8 @@ def main():
     ap = argparse.ArgumentParser(
         description="Pages web superposées en fond d'écran interactif.",
         epilog='Calque : "URL|x=70%,y=5%,w=28%,h=40%,opacity=0.85,transparent,through,'
-               'zoom=1.2,refresh=60". La première adresse est le fond.')
+               'zoom=1.2,refresh=60". La première adresse est le fond. '
+               'Panneau système intégré : "stats?city=Paris|x=1%,y=2%,w=460,h=230".')
     ap.add_argument("urls", nargs="*", metavar="URL",
                     help="adresses à empiler, du fond vers le dessus")
     ap.add_argument("--config", help="fichier JSON décrivant les calques")
@@ -338,6 +399,7 @@ def main():
             layer.user = layer.user or args.user
 
     users = {layer.host: layer.user for layer in layer_list if layer.user}
+    builtins = [layer for layer in layer_list if layer.builtin]
 
     if args.forget:
         if not users:
@@ -349,6 +411,13 @@ def main():
 
     # Ctrl+C quitte proprement au lieu d'afficher une erreur.
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, Gtk.main_quit)
+
+    if builtins:
+        # Pages intégrées (« stats ») : servies par un petit serveur local.
+        base = stats.start_server()
+        print(f"Panneau système : {base}/stats.html")
+        for layer in builtins:
+            layer.url = base + layer.url[len(L.BUILTIN):]
 
     install_css()
     auth = Auth(users)

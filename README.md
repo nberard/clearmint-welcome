@@ -7,7 +7,7 @@ toutes les fenêtres, comme un fond d'écran, mais restent cliquables.
 ## Installation
 
 ```bash
-sudo apt install python3-gi gir1.2-webkit2-4.1 gir1.2-secret-1
+sudo apt install python3-gi python3-gi-cairo gir1.2-webkit2-4.1 gir1.2-secret-1
 ```
 
 Désactive les icônes du bureau de Mint (**Paramètres → Bureau**), sinon elles
@@ -24,6 +24,11 @@ python3 desktop_dashboard.py \
   https://nico@health.touplitoui.me \
   "http://localhost:8080/hud.html|x=70%,y=5%,w=28%,h=40%,opacity=0.85" \
   "http://localhost:8080/fx.html|through"
+
+# avec le panneau système intégré (météo, CPU, mémoire, réseau, disques)
+python3 desktop_dashboard.py \
+  https://nico@health.touplitoui.me \
+  "stats?city=Paris|x=1%,y=2%,w=640,h=200"
 
 # ou depuis un fichier
 python3 desktop_dashboard.py --config layers.example.json
@@ -50,8 +55,25 @@ noms (voir `layers.example.json`).
 - Un calque n'est vraiment transparent que si **la page elle-même** a un fond
   transparent (`body { background: transparent }`). Les sites classiques ont un fond
   blanc : réduis-les avec `x/y/w/h` ou baisse leur `opacity`.
-- Un calque plein écran qui n'a pas `through` capte tous les clics : les calques du
-  dessous ne sont plus cliquables.
+- Les calques transparents sont réunis dans une seule page (dans des cadres) et
+  affichés **au-dessus** des calques opaques. Certains sites refusent d'être affichés
+  dans un cadre (en-tête `X-Frame-Options`) : pour ceux-là, mets `transparent=0`.
+- Les clics vont au calque transparent sous la souris ; là où il n'y en a pas (ou
+  sur un calque `through`), ils passent aux calques du dessous.
+
+### Panneau système intégré : `stats`
+
+Météo, CPU (charge et température), mémoire, réseau, disques (activité et place
+libre sur `/` et `/home`), en style HUD sur fond transparent, mis à jour chaque
+seconde. Les mesures sont lues directement dans le système, aucun service extérieur
+sauf la météo (Open-Meteo, gratuit, sans clé).
+
+- `stats?city=Paris` : météo pour une ville ;
+- `stats?lat=48.85&lon=2.35` : météo pour des coordonnées ;
+- `stats` : sans météo.
+
+Pour l'essayer seul dans un navigateur : `python3 stats.py`, puis
+http://127.0.0.1:8765/stats.html
 
 ## Connexion
 

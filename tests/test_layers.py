@@ -49,6 +49,24 @@ class ParseSpec(unittest.TestCase):
                 L.parse_spec(spec)
 
 
+class Builtin(unittest.TestCase):
+    def test_stats_page(self):
+        layer = L.parse_spec("stats|x=1%,w=460")
+        self.assertTrue(layer.builtin)
+        self.assertEqual(layer.url, "builtin:/stats.html")
+        self.assertIsNone(layer.user)
+        self.assertEqual(layer.w, "460")
+
+    def test_stats_with_query(self):
+        layer = L.parse_spec("stats?city=Paris|h=230")
+        self.assertEqual(layer.url, "builtin:/stats.html?city=Paris")
+        self.assertEqual(L.from_dict({"url": "stats?lat=48.8&lon=2.3"}).url,
+                         "builtin:/stats.html?lat=48.8&lon=2.3")
+
+    def test_normal_urls_are_not_builtin(self):
+        self.assertFalse(L.parse_spec("https://stats.example.com").builtin)
+
+
 class Finalize(unittest.TestCase):
     def test_only_first_layer_opaque_by_default(self):
         layers = L.finalize([L.parse_spec("http://a.example"),
@@ -71,6 +89,28 @@ class Place(unittest.TestCase):
     def test_fullscreen(self):
         self.assertTrue(L.is_fullscreen(L.parse_spec("http://a.example"), 1920, 1080))
         self.assertFalse(L.is_fullscreen(L.parse_spec("http://a.example|w=50%"), 1920, 1080))
+
+
+class Composer(unittest.TestCase):
+    def test_frames_in_order_with_styles(self):
+        layers = L.finalize([
+            L.parse_spec("http://a.example"),
+            L.parse_spec("http://b.example/hud.html|x=70%,y=10,w=400,h=30%,opacity=0.8"),
+            L.parse_spec('http://c.example/?q=1&x="y"|through,zoom=2,refresh=30'),
+        ])
+        page = L.composer_html(layers[1:])
+        self.assertLess(page.index("b.example"), page.index("c.example"))
+        self.assertIn("left:70%;top:10px;width:calc(400px / 1);height:calc(30% / 1);z-index:1;"
+                      "opacity:0.8;", page)
+        self.assertIn("transform:scale(2);pointer-events:none;", page)
+        self.assertIn('data-refresh="30"', page)
+        self.assertIn("q=1&amp;x=&quot;y&quot;", page)   # adresse échappée
+        self.assertNotIn('x="y"', page)
+
+    def test_css_size(self):
+        self.assertEqual(L.css_size("50%"), "50%")
+        self.assertEqual(L.css_size("300"), "300px")
+        self.assertEqual(L.css_size("12.5"), "12.5px")
 
 
 class Config(unittest.TestCase):

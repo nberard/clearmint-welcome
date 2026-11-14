@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Stats</title>
+<style>
+  :root {
+    --hud: #3ef2ff;
+    --hud-dim: rgba(62, 242, 255, .55);
+    --hud-faint: rgba(62, 242, 255, .14);
+    --warn: #ffb547;
+    --hot: #ff4d6d;
+    --panel: rgba(4, 18, 30, .55);
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; background: transparent; overflow: hidden; }
+  body {
+    font-family: "DejaVu Sans Mono", "Ubuntu Mono", monospace;
+    color: var(--hud);
+    text-shadow: 0 0 6px rgba(62, 242, 255, .6);
+    padding: 6px;
+    display: grid;
+    grid-template-columns: repeat(var(--cols, 5), 1fr);
+    gap: 6px;
+  }
+  .card {
+    position: relative;
+    background: var(--panel);
+    border: 1px solid var(--hud-dim);
+    box-shadow: 0 0 12px rgba(62, 242, 255, .18), inset 0 0 18px rgba(62, 242, 255, .06);
+    padding: 8px 10px;
+    display: flex; flex-direction: column; gap: 4px;
+    min-width: 0;
+    clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+  }
+  .card::after {               /* lignes de balayage */
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(0deg, transparent 0 2px, rgba(62, 242, 255, .04) 2px 3px);
+  }
+  .label { font-size: clamp(8px, 5vh, 11px); letter-spacing: .2em; color: var(--hud-dim); }
+  .big { font-size: clamp(15px, 14vh, 30px); font-weight: bold; line-height: 1.05; white-space: nowrap; }
+  .small { font-size: clamp(9px, 6vh, 12px); color: var(--hud-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wrap { white-space: normal; line-height: 1.2; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+  canvas { width: 100%; height: clamp(20px, 22vh, 48px); display: block; margin-top: auto; }
+  .bar { height: 5px; background: var(--hud-faint); position: relative; }
+  .bar > i { position: absolute; inset: 0 auto 0 0; background: var(--hud); box-shadow: 0 0 6px var(--hud); }
+  .warn { color: var(--warn); text-shadow: 0 0 6px rgba(255, 181, 71, .6); }
+  .hot { color: var(--hot); text-shadow: 0 0 6px rgba(255, 77, 109, .7); }
+  .bar > i.warn { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
+  .bar > i.hot { background: var(--hot); box-shadow: 0 0 6px var(--hot); }
+  .ring { width: clamp(36px, 30vh, 70px); height: clamp(36px, 30vh, 70px); margin: 2px auto 0; }
+  .icon { font-size: clamp(16px, 12vh, 26px); text-shadow: none; }
+  .offline { opacity: .35; }
+</style>
+</head>
+<body>
+  <section class="card" id="weather">
+    <span class="label">MÉTÉO</span>
+    <div class="row"><span class="icon" id="w-icon">·</span><span class="big" id="w-temp">--</span></div>
+    <span class="small wrap" id="w-desc">—</span>
+    <span class="small" id="w-place"></span>
+  </section>
+
+  <section class="card">
+    <span class="label">CPU</span>
+    <div class="row"><span class="big" id="cpu">--</span><span id="temp" class="small"></span></div>
+    <div class="bar"><i id="cpu-bar" style="width:0"></i></div>
+    <canvas id="cpu-graph"></canvas>
+  </section>
+
+  <section class="card">
+    <span class="label">MÉMOIRE</span>
+    <svg class="ring" viewBox="0 0 36 36">
+      <circle cx="18" cy="18" r="15.9" fill="none" stroke="rgba(62,242,255,.14)" stroke-width="3.2"/>
+      <circle id="mem-ring" cx="18" cy="18" r="15.9" fill="none" stroke="currentColor" stroke-width="3.2"
+              stroke-dasharray="0 100" transform="rotate(-90 18 18)" style="filter:drop-shadow(0 0 2px currentColor)"/>
+      <text id="mem-pct" x="18" y="21" text-anchor="middle" font-size="9" fill="currentColor">--</text>
+    </svg>
+    <span class="small" id="mem-detail" style="text-align:center">—</span>
+  </section>
+
+  <section class="card">
+    <span class="label">RÉSEAU</span>
+    <div class="row"><span class="small">▼</span><span class="big" id="down" style="font-size:clamp(12px,10vh,20px)">--</span></div>
+    <div class="row"><span class="small">▲</span><span class="big" id="up" style="font-size:clamp(12px,10vh,20px)">--</span></div>
+    <canvas id="net-graph"></canvas>
+  </section>
+
+  <section class="card">
+    <span class="label">DISQUES</span>
+    <span class="small">R <b id="dread">--</b></span><span class="small">W <b id="dwrite">--</b></span>
+    <div id="mounts" style="display:flex;flex-direction:column;gap:5px;margin-top:2px"></div>
+  </section>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+const HISTORY = 60;
+const hist = { cpu: [], down: [], up: [] };
+
+function fmtBytes(n, perSec) {
+  const u = ["o", "Ko", "Mo", "Go", "To"];
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return (n >= 100 || i === 0 ? n.toFixed(0) : n.toFixed(1)) + " " + u[i] + (perSec ? "/s" : "");
+}
+function level(v, warn, hot) { return v >= hot ? "hot" : v >= warn ? "warn" : ""; }
+function push(arr, v) { arr.push(v); if (arr.length > HISTORY) arr.shift(); }
+
+function sparkline(canvas, series, colors, max) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (canvas.width !== w * dpr) { canvas.width = w * dpr; canvas.height = h * dpr; }
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const top = max || Math.max(1, ...series.flat());
+  series.forEach((data, k) => {
+    if (data.length < 2) return;
+    const step = w / (HISTORY - 1);
+    const x0 = w - (data.length - 1) * step;
+    ctx.beginPath();
+    data.forEach((v, i) => {
+      const x = x0 + i * step, y = h - 1 - (v / top) * (h - 3);
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    });
+    ctx.strokeStyle = colors[k];
+    ctx.lineWidth = 1.5;
+    ctx.shadowColor = colors[k];
+    ctx.shadowBlur = 6;
+    ctx.stroke();
+    if (k === 0) {                    // remplissage léger sous la première courbe
+      ctx.lineTo(w, h); ctx.lineTo(x0, h); ctx.closePath();
+      ctx.fillStyle = "rgba(62,242,255,.10)"; ctx.shadowBlur = 0; ctx.fill();
+    }
+  });
+}
+
+function render(s) {
+  document.body.classList.remove("offline");
+  // CPU
+  const cpu = s.cpu.percent;
+  $("cpu").textContent = cpu.toFixed(0) + "%";
+  $("cpu").className = "big " + level(cpu, 70, 90);
+  $("cpu-bar").style.width = cpu + "%";
+  $("cpu-bar").className = level(cpu, 70, 90);
+  if (s.cpu.temp != null) {
+    $("temp").textContent = s.cpu.temp.toFixed(0) + "°C";
+    $("temp").className = "small " + level(s.cpu.temp, 75, 90);
+  }
+  push(hist.cpu, cpu);
+  sparkline($("cpu-graph"), [hist.cpu], ["#3ef2ff"], 100);
+  // Mémoire
+  const m = s.mem;
+  $("mem-ring").setAttribute("stroke-dasharray", m.percent + " 100");
+  $("mem-ring").style.color = m.percent >= 90 ? "var(--hot)" : m.percent >= 75 ? "var(--warn)" : "var(--hud)";
+  $("mem-pct").textContent = m.percent.toFixed(0) + "%";
+  $("mem-detail").textContent = fmtBytes(m.used) + " / " + fmtBytes(m.total);
+  // Réseau
+  $("down").textContent = fmtBytes(s.net.down, true);
+  $("up").textContent = fmtBytes(s.net.up, true);
+  push(hist.down, s.net.down); push(hist.up, s.net.up);
+  sparkline($("net-graph"), [hist.down, hist.up], ["#3ef2ff", "#c77dff"]);
+  // Disques
+  $("dread").textContent = fmtBytes(s.disk.read, true);
+  $("dwrite").textContent = fmtBytes(s.disk.write, true);
+  $("mounts").innerHTML = s.disk.mounts.map((d) => {
+    const lv = level(d.percent, 80, 95);
+    return `<div><div class="row small"><span>${d.mount}</span>` +
+           `<span class="${lv}">${fmtBytes(d.free)} libres</span></div>` +
+           `<div class="bar"><i class="${lv}" style="width:${d.percent}%"></i></div></div>`;
+  }).join("");
+}
+
+async function tick() {
+  try {
+    const r = await fetch("/api/stats", { cache: "no-store" });
+    const s = await r.json();
+    if (s.cpu) render(s);
+  } catch (e) {
+    document.body.classList.add("offline");
+  }
+}
+setInterval(tick, 1000);
+tick();
+
+// ----------------------------------------------------------------- météo (Open-Meteo, sans clé)
+const WEATHER = {
+  0: ["☀️", "Ciel dégagé"], 1: ["🌤️", "Plutôt dégagé"], 2: ["⛅", "Partiellement nuageux"],
+  3: ["☁️", "Couvert"], 45: ["🌫️", "Brouillard"], 48: ["🌫️", "Brouillard givrant"],
+  51: ["🌦️", "Bruine légère"], 53: ["🌦️", "Bruine"], 55: ["🌧️", "Bruine forte"],
+  61: ["🌧️", "Pluie faible"], 63: ["🌧️", "Pluie"], 65: ["🌧️", "Forte pluie"],
+  66: ["🌧️", "Pluie verglaçante"], 67: ["🌧️", "Pluie verglaçante"],
+  71: ["🌨️", "Neige faible"], 73: ["🌨️", "Neige"], 75: ["❄️", "Forte neige"], 77: ["🌨️", "Grains de neige"],
+  80: ["🌦️", "Averses"], 81: ["🌧️", "Averses"], 82: ["⛈️", "Fortes averses"],
+  85: ["🌨️", "Averses de neige"], 86: ["❄️", "Averses de neige"],
+  95: ["⛈️", "Orage"], 96: ["⛈️", "Orage et grêle"], 99: ["⛈️", "Orage et grêle"],
+};
+
+async function place() {
+  const lat = params.get("lat"), lon = params.get("lon"), city = params.get("city");
+  if (lat && lon) return { lat, lon, name: city || `${(+lat).toFixed(2)}, ${(+lon).toFixed(2)}` };
+  if (!city) return null;
+  const r = await fetch("https://geocoding-api.open-meteo.com/v1/search?count=1&language=fr&name=" +
+                        encodeURIComponent(city));
+  const g = (await r.json()).results?.[0];
+  return g ? { lat: g.latitude, lon: g.longitude, name: g.name } : null;
+}
+
+let where = null;
+async function weather() {
+  try {
+    where = where || await place();
+    if (!where) {
+      $("weather").style.display = "none";
+      document.body.style.setProperty("--cols", 4);
+      return;
+    }
+    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${where.lat}` +
+                          `&longitude=${where.lon}&current=temperature_2m,weather_code,wind_speed_10m`);
+    const c = (await r.json()).current;
+    const [icon, desc] = WEATHER[c.weather_code] || ["·", "—"];
+    $("w-icon").textContent = icon;
+    $("w-temp").textContent = Math.round(c.temperature_2m) + "°C";
+    $("w-desc").textContent = desc + " · " + Math.round(c.wind_speed_10m) + " km/h";
+    $("w-place").textContent = where.name;
+  } catch (e) {
+    $("w-desc").textContent = "météo indisponible";
+  }
+}
+weather();
+setInterval(weather, 15 * 60 * 1000);
+</script>
+</body>
+</html>

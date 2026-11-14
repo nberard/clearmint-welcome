@@ -4,6 +4,13 @@
       "url": "https://nico@health.touplitoui.me"
     },
     {
+      "url": "stats?city=Paris",
+      "x": "1%",
+      "y": "2%",
+      "w": "640",
+      "h": "200"
+    },
+    {
       "url": "http://localhost:8080/hud.html",
       "x": "70%",
       "y": "5%",

@@ -6,6 +6,7 @@ Un calque en ligne de commande s'écrit « URL|option,option=valeur,... », par 
   "https://nico@health.touplitoui.me"
   "http://localhost:8080/hud.html|x=70%,y=5%,w=28%,h=40%,opacity=0.85"
   "http://localhost:8080/fx.html|through"
+  "stats?city=Paris|x=1%,y=2%,w=460,h=230"     (panneau intégré : CPU, mémoire, réseau...)
 
 Options :
   x, y, w, h    position et taille, en pixels (300) ou en pourcentage de l'écran (50%)
@@ -48,12 +49,31 @@ class Layer:
     def host(self):
         return urlsplit(self.url).hostname
 
+    @property
+    def builtin(self):
+        """Page intégrée (servie par l'appli), ex. « stats »."""
+        return self.url.startswith(BUILTIN)
+
+
+BUILTIN = "builtin:"
+BUILTIN_PAGES = {"stats": "/stats.html"}
+
+
+def normalize_url(url):
+    """Adresse d'un calque -> (adresse, identifiant). Gère aussi les pages intégrées."""
+    name, sep, query = url.partition("?")
+    if name in BUILTIN_PAGES:
+        return BUILTIN + BUILTIN_PAGES[name] + sep + query, None
+    return split_user(url)
+
 
 def split_user(url):
     """Retire 'nico@' de l'adresse : WebKit n'accepte pas l'identifiant dans l'URL."""
     parts = urlsplit(url)
     if not parts.scheme or not parts.hostname:
-        raise LayerError(f"adresse invalide : {url!r} (il faut http:// ou https://)")
+        pages = ", ".join(BUILTIN_PAGES)
+        raise LayerError(f"adresse invalide : {url!r} (il faut http:// ou https://, "
+                         f"ou une page intégrée : {pages})")
     netloc = parts.hostname
     if parts.port:
         netloc += f":{parts.port}"
@@ -110,7 +130,7 @@ def _apply(layer, key, value):
 def parse_spec(spec):
     """'URL|x=10%,w=30%,through' -> Layer."""
     url, _, opts = spec.partition("|")
-    url, user = split_user(url.strip())
+    url, user = normalize_url(url.strip())
     layer = Layer(url=url, user=user)
     for item in filter(None, (o.strip() for o in opts.split(","))):
         key, _, value = item.partition("=")
@@ -121,7 +141,7 @@ def parse_spec(spec):
 def from_dict(data):
     if not isinstance(data, dict) or "url" not in data:
         raise LayerError(f"chaque calque doit avoir une « url » : {data!r}")
-    url, user = split_user(str(data["url"]))
+    url, user = normalize_url(str(data["url"]))
     layer = Layer(url=url, user=user)
     for key, value in data.items():
         if key != "url":
@@ -170,3 +190,53 @@ def place(layer, width, height):
 
 def is_fullscreen(layer, width, height):
     return place(layer, width, height) == (0, 0, width, height)
+
+
+# --------------------------------------------------------------------------- calques transparents
+
+def css_size(value):
+    v = str(value).strip()
+    return v if v.endswith("%") else f"{float(v):g}px"
+
+
+COMPOSER_TEMPLATE = """<!doctype html>
+<html><head><meta charset="utf-8"><style>
+html, body {{ margin: 0; height: 100%; overflow: hidden; background: transparent; }}
+iframe {{ position: absolute; border: 0; background: transparent; transform-origin: 0 0;
+          color-scheme: normal; }}
+</style></head><body>
+{frames}
+<script>
+for (const f of document.querySelectorAll("iframe[data-refresh]")) {{
+  const s = +f.dataset.refresh;
+  if (s > 0) setInterval(() => {{ f.src = f.src; }}, s * 1000);
+}}
+</script>
+</body></html>
+"""
+
+
+def composer_html(layers):
+    """Page qui empile les calques transparents dans des cadres (iframes).
+
+    Le navigateur gère alors seul la transparence entre les calques : plusieurs vues
+    WebKit transparentes empilées dans GTK laissent des zones noires.
+    """
+    import html
+    frames = []
+    for i, layer in enumerate(layers):
+        z = layer.zoom
+        style = (f"left:{css_size(layer.x)};top:{css_size(layer.y)};"
+                 f"width:calc({css_size(layer.w)} / {z:g});"
+                 f"height:calc({css_size(layer.h)} / {z:g});"
+                 f"z-index:{i + 1};")
+        if z != 1:
+            style += f"transform:scale({z:g});"
+        if layer.opacity < 1:
+            style += f"opacity:{layer.opacity:g};"
+        if layer.through:
+            style += "pointer-events:none;"
+        frames.append(f'<iframe id="layer{i + 1}" src="{html.escape(layer.url, quote=True)}" '
+                      f'style="{style}" data-refresh="{layer.refresh}" scrolling="no" '
+                      f'allowtransparency="true"></iframe>')
+    return COMPOSER_TEMPLATE.format(frames="\n".join(frames))
