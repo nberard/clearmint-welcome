@@ -14,6 +14,8 @@
   .info { display: grid; grid-template-columns: auto 1fr; gap: .6vh 1.2em; font-size: clamp(10px, 6vh, 14px);
           margin-left: auto; align-self: center; }
   .info span:nth-child(odd) { color: var(--hud-dim); letter-spacing: .15em; font-size: .8em; align-self: center; }
+  .battery { display: inline-flex; align-items: center; gap: .5em; }
+  .battery svg { height: 1.3em; width: auto; overflow: visible; filter: drop-shadow(0 0 3px currentColor); }
 </style>
 </head>
 <body>
@@ -50,6 +52,20 @@ function duration(s) {
   const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
   return d ? `${d} j ${h} h` : h ? `${h} h ${pad(m)}` : `${m} min`;
 }
+// Pile dessinée : niveau de remplissage, couleur selon la charge, éclair si branchée.
+function batteryIcon(pct, charging) {
+  const w = Math.max(1.5, 30 * Math.min(100, pct) / 100);
+  const color = pct <= 10 ? "var(--hot)" : pct <= 25 ? "var(--warn)" : "currentColor";
+  const bolt = charging
+    ? '<path d="M19 3 L13 11 H17 L15 17 L22 8 H18 Z" fill="#03070c" stroke="currentColor" stroke-width=".8" stroke-linejoin="round"/>'
+    : "";
+  return `<svg viewBox="0 0 40 20" aria-hidden="true">
+    <rect x="1" y="1" width="34" height="18" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/>
+    <rect x="36" y="6" width="3" height="8" rx="1" fill="currentColor"/>
+    <rect x="3" y="3" width="${w}" height="14" rx="1.5" fill="${color}" opacity=".85"/>
+    ${bolt}</svg>`;
+}
+
 async function system() {
   try {
     const s = (await (await fetch("/api/stats", { cache: "no-store" })).json()).system;
@@ -60,9 +76,12 @@ async function system() {
     $("uptime").textContent = duration(s.uptime);
     $("load").textContent = s.load.join("  ");
     if (s.battery) {
-      const b = s.battery, charging = /charg/i.test(b.status) && !/dis/i.test(b.status);
-      $("bat").textContent = `${b.percent}%${charging ? " ⚡" : ""}`;
-      $("bat").className = b.percent <= 10 ? "hot" : b.percent <= 25 ? "warn" : "";
+      const b = s.battery;
+      const charging = /charg/i.test(b.status) && !/dis/i.test(b.status);
+      const full = /full/i.test(b.status) || b.percent >= 100;
+      $("bat").innerHTML = batteryIcon(b.percent, charging) +
+        `<span>${b.percent}%${charging ? " · en charge" : full ? " · pleine" : ""}</span>`;
+      $("bat").className = "battery " + (b.percent <= 10 ? "hot" : b.percent <= 25 ? "warn" : "");
     } else {
       $("bat").style.display = $("bat-label").style.display = "none";
     }
