@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Affiche une page web comme fond d'écran interactif (une fenêtre par écran).
+"""Affiche une ou plusieurs pages web superposées comme fond d'écran interactif.
 
 Usage :
   python3 desktop_dashboard.py https://nico@health.touplitoui.me
-  python3 desktop_dashboard.py https://nico@health.touplitoui.me --forget   # oublie le mot de passe
-  python3 desktop_dashboard.py https://nico@health.touplitoui.me --window   # test : fenêtre normale
+  python3 desktop_dashboard.py URL1 "URL2|x=70%,y=5%,w=28%,h=40%,opacity=0.85" "URL3|through"
+  python3 desktop_dashboard.py --config layers.json
+  python3 desktop_dashboard.py ... --window   # test : fenêtre normale
+  python3 desktop_dashboard.py ... --forget   # oublie les mots de passe enregistrés
 
+- Calques : la première adresse est le fond, les suivantes sont empilées par-dessus.
+  Les options de chaque calque sont décrites dans layers.py et le README.
 - Authentification HTTP (la fenêtre « nom d'utilisateur / mot de passe » du navigateur) :
   le mot de passe est demandé une seule fois, puis rangé dans le trousseau de Mint
   (le même que celui des mots de passe Wi-Fi), jamais en clair dans un fichier.
@@ -17,7 +21,7 @@ Dépendances : sudo apt install python3-gi gir1.2-webkit2-4.1 gir1.2-secret-1
 import argparse
 import os
 import signal
-from urllib.parse import urlsplit, urlunsplit
+import sys
 
 import gi
 gi.require_version("Gtk", "3.0")
@@ -25,6 +29,8 @@ gi.require_version("Gdk", "3.0")
 gi.require_version("WebKit2", "4.1")
 gi.require_version("Secret", "1")
 from gi.repository import Gdk, GLib, Gtk, Secret, WebKit2
+
+import layers as L
 
 APP_ID = "desktop-dashboard"
 DATA_DIR = os.path.join(os.path.expanduser("~/.local/share"), APP_ID)
@@ -72,37 +78,46 @@ class Auth:
     la question qu'une fois, puis on répond à toutes les demandes en attente.
     """
 
-    def __init__(self, default_user):
-        self.default_user = default_user
+    def __init__(self, users):
+        self.users = dict(users)  # host -> identifiant (pris dans les URL : https://nico@...)
         self.known = {}      # host -> (user, password) pour cette session
         self.pending = {}    # host -> [requêtes en attente]
+        self.queue = []      # sites en attente de la fenêtre de connexion
         self.dialog = None
 
     def on_authenticate(self, _view, request):
         host = request.get_host()
+        user = self.users.get(host)
         print(f"[auth] {host} demande une connexion"
               f"{' (nouvel essai)' if request.is_retry() else ''}")
         if request.is_retry():
             # Mot de passe refusé par le serveur : on l'oublie et on redemande.
-            user = self.known.get(host, (self.default_user, None))[0]
+            user = self.known.get(host, (user, None))[0]
             self.known.pop(host, None)
             if user:
                 keyring_clear(host, user)
         elif host in self.known:
             self._answer(request, *self.known[host])
             return True
-        elif self.default_user:
-            password = keyring_get(host, self.default_user)
+        elif user:
+            password = keyring_get(host, user)
             if password:
-                print(f"[auth] mot de passe trouvé dans le trousseau pour {self.default_user}")
-                self.known[host] = (self.default_user, password)
-                self._answer(request, self.default_user, password)
+                print(f"[auth] mot de passe trouvé dans le trousseau pour {user}@{host}")
+                self.known[host] = (user, password)
+                self._answer(request, user, password)
                 return True
 
+        first = host not in self.pending
         self.pending.setdefault(host, []).append(request)
-        if self.dialog is None:
-            self._ask(host, request.get_realm(), request.is_retry())
+        if first:
+            self.queue.append((host, request.get_realm(), request.is_retry()))
+        self._next()
         return True  # on répondra plus tard
+
+    def _next(self):
+        """Une seule fenêtre de connexion à la fois, un site après l'autre."""
+        if self.dialog is None and self.queue:
+            self._ask(*self.queue.pop(0))
 
     @staticmethod
     def _answer(request, user, password):
@@ -128,7 +143,8 @@ class Auth:
         label.set_markup(msg)
         box.add(label)
 
-        user_entry = Gtk.Entry(text=self.default_user or "", placeholder_text="Utilisateur")
+        known_user = self.users.get(host)
+        user_entry = Gtk.Entry(text=known_user or "", placeholder_text="Utilisateur")
         pass_entry = Gtk.Entry(visibility=False, placeholder_text="Mot de passe")
         pass_entry.set_activates_default(True)
         remember = Gtk.CheckButton(label="Se souvenir du mot de passe", active=True)
@@ -137,7 +153,7 @@ class Auth:
 
         d.connect("response", self._on_response, host, user_entry, pass_entry, remember)
         d.show_all()
-        (pass_entry if self.default_user else user_entry).grab_focus()
+        (pass_entry if known_user else user_entry).grab_focus()
         d.present()
         self.dialog = d
         print("[auth] fenêtre de connexion affichée")
@@ -150,13 +166,14 @@ class Auth:
         if response != Gtk.ResponseType.OK or not user:
             for r in requests:
                 r.cancel()
-            return
-        self.default_user = user
-        self.known[host] = (user, password)
-        if remember.get_active():
-            keyring_set(host, user, password)
-        for r in requests:
-            self._answer(r, user, password)
+        else:
+            self.users[host] = user
+            self.known[host] = (user, password)
+            if remember.get_active():
+                keyring_set(host, user, password)
+            for r in requests:
+                self._answer(r, user, password)
+        self._next()
 
 
 # --------------------------------------------------------------------------- fenêtres
@@ -185,76 +202,161 @@ def on_load_failed(_view, _event, uri, error, name):
     return False
 
 
-def make_window(monitor, context, url, auth, test_mode, name):
+def install_css():
+    """Fond noir sous les calques (sans dépendre de cairo)."""
+    provider = Gtk.CssProvider()
+    provider.load_from_data(b".dashboard-base { background-color: #000; }")
+    Gtk.StyleContext.add_provider_for_screen(
+        Gdk.Screen.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+
+def make_view(layer, context, auth, name):
+    content = WebKit2.UserContentManager()
+    if layer.opacity < 1:
+        # Opacité appliquée dans la page : avec l'opacité GTK, le fond transparent
+        # devient blanc.
+        content.add_style_sheet(WebKit2.UserStyleSheet(
+            f"html {{ opacity: {layer.opacity} !important; }}",
+            WebKit2.UserContentInjectedFrames.TOP_FRAME,
+            WebKit2.UserStyleLevel.USER, None, None))
+    view = WebKit2.WebView(web_context=context, user_content_manager=content)
+    if layer.transparent:
+        # Fond de page transparent : les calques du dessous restent visibles là où la
+        # page ne dessine rien (la page elle-même doit avoir un fond transparent).
+        view.set_background_color(Gdk.RGBA(0, 0, 0, 0))
+    if layer.zoom != 1:
+        view.set_zoom_level(layer.zoom)
+    view.connect("authenticate", auth.on_authenticate)
+    view.connect("load-changed", on_load_changed, name)
+    view.connect("load-failed", on_load_failed, name)
+    if layer.refresh:
+        GLib.timeout_add_seconds(layer.refresh, lambda: (view.reload(), True)[1])
+    view.load_uri(layer.url)
+    return view
+
+
+def place_layers(overlay, views, width, height):
+    """Positionne chaque calque (en pixels) pour une zone width x height."""
+    for layer, view in views:
+        if L.is_fullscreen(layer, width, height):
+            view.set_halign(Gtk.Align.FILL)
+            view.set_valign(Gtk.Align.FILL)
+            view.set_margin_start(0)
+            view.set_margin_top(0)
+            view.set_size_request(-1, -1)
+        else:
+            x, y, w, h = L.place(layer, width, height)
+            view.set_halign(Gtk.Align.START)
+            view.set_valign(Gtk.Align.START)
+            view.set_margin_start(x)
+            view.set_margin_top(y)
+            view.set_size_request(w, h)
+
+
+def make_window(monitor, context, layer_list, auth, test_mode, screen):
     geo = monitor.get_geometry()
-    win = Gtk.Window(title=f"Desktop Dashboard ({name})")
+    win = Gtk.Window(title=f"Desktop Dashboard ({screen})")
     if test_mode:
-        # Fenêtre normale, pour vérifier la page et la connexion sans l'effet « bureau ».
-        win.set_default_size(min(1280, geo.width), min(800, geo.height))
+        # Fenêtre normale, pour vérifier les pages et la connexion sans l'effet « bureau ».
+        width, height = min(1280, geo.width), min(800, geo.height)
         win.connect("destroy", Gtk.main_quit)
     else:
+        width, height = geo.width, geo.height
         win.set_type_hint(Gdk.WindowTypeHint.DESKTOP)  # se comporte comme le bureau
         win.set_decorated(False)
         win.set_skip_taskbar_hint(True)
         win.set_skip_pager_hint(True)
         win.set_keep_below(True)
         win.move(geo.x, geo.y)
-        win.set_default_size(geo.width, geo.height)
+    win.set_default_size(width, height)
 
-    view = WebKit2.WebView.new_with_context(context)
-    view.connect("authenticate", auth.on_authenticate)
-    view.connect("load-changed", on_load_changed, name)
-    view.connect("load-failed", on_load_failed, name)
-    view.load_uri(url)
-    win.add(view)
+    # Le fond noir sert de base ; tous les calques sont empilés dessus, dans l'ordre.
+    overlay = Gtk.Overlay()
+    base = Gtk.Box()
+    base.get_style_context().add_class("dashboard-base")
+    overlay.add(base)
+
+    views = []
+    for i, layer in enumerate(layer_list):
+        name = f"{screen} / calque {i + 1}"
+        view = make_view(layer, context, auth, name)
+        overlay.add_overlay(view)
+        overlay.set_overlay_pass_through(view, layer.through)
+        views.append((layer, view))
+    place_layers(overlay, views, width, height)
+
+    # La fenêtre de test peut être redimensionnée : on recalcule les positions.
+    size = {"wh": (width, height)}
+
+    def on_configure(_win, event):
+        if (event.width, event.height) != size["wh"]:
+            size["wh"] = (event.width, event.height)
+            place_layers(overlay, views, event.width, event.height)
+        return False
+
+    win.connect("configure-event", on_configure)
+    win.add(overlay)
     win.show_all()
     if not test_mode:
         win.stick()  # visible sur tous les espaces de travail
-    print(f"[{name}] fenêtre {'de test' if test_mode else 'bureau'} "
-          f"{geo.width}x{geo.height} à ({geo.x},{geo.y})")
+    print(f"[{screen}] fenêtre {'de test' if test_mode else 'bureau'} "
+          f"{width}x{height} à ({geo.x},{geo.y}), {len(layer_list)} calque(s)")
+    for i, (layer, _) in enumerate(views):
+        x, y, w, h = L.place(layer, width, height)
+        print(f"  calque {i + 1}: {layer.url}  {w}x{h} à ({x},{y})"
+              f"{', opacité ' + str(layer.opacity) if layer.opacity < 1 else ''}"
+              f"{', fond transparent' if layer.transparent else ''}"
+              f"{', clics traversants' if layer.through else ''}")
     return win
 
 
-def split_user(url):
-    """Retire 'nico@' de l'adresse : WebKit n'accepte pas l'identifiant dans l'URL."""
-    parts = urlsplit(url)
-    user = parts.username
-    netloc = parts.hostname or ""
-    if parts.port:
-        netloc += f":{parts.port}"
-    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment)), user
-
-
 def main():
-    ap = argparse.ArgumentParser(description="Page web en fond d'écran interactif.")
-    ap.add_argument("url", nargs="?", default="http://localhost:8080")
-    ap.add_argument("--user", help="identifiant (sinon pris dans l'URL : https://nico@...)")
-    ap.add_argument("--forget", action="store_true", help="oublie le mot de passe enregistré")
+    ap = argparse.ArgumentParser(
+        description="Pages web superposées en fond d'écran interactif.",
+        epilog='Calque : "URL|x=70%,y=5%,w=28%,h=40%,opacity=0.85,transparent,through,'
+               'zoom=1.2,refresh=60". La première adresse est le fond.')
+    ap.add_argument("urls", nargs="*", metavar="URL",
+                    help="adresses à empiler, du fond vers le dessus")
+    ap.add_argument("--config", help="fichier JSON décrivant les calques")
+    ap.add_argument("--user", help="identifiant par défaut (sinon pris dans l'URL : https://nico@...)")
+    ap.add_argument("--forget", action="store_true", help="oublie les mots de passe enregistrés")
     ap.add_argument("--window", action="store_true",
                     help="test : une fenêtre normale au lieu du fond d'écran")
     args = ap.parse_args()
 
-    url, url_user = split_user(args.url)
-    user = args.user or url_user
-    host = urlsplit(url).hostname
+    try:
+        if args.config:
+            layer_list = L.load_config(args.config)
+            layer_list += [L.parse_spec(s) for s in args.urls]
+        else:
+            layer_list = [L.parse_spec(s) for s in (args.urls or ["http://localhost:8080"])]
+    except L.LayerError as e:
+        sys.exit(f"Erreur : {e}")
+    L.finalize(layer_list)
+    if args.user:
+        for layer in layer_list:
+            layer.user = layer.user or args.user
+
+    users = {layer.host: layer.user for layer in layer_list if layer.user}
 
     if args.forget:
-        if user:
+        if not users:
+            print("Indique l'utilisateur : https://nico@... ou --user nico")
+        for host, user in users.items():
             keyring_clear(host, user)
             print(f"Mot de passe oublié pour {user}@{host}.")
-        else:
-            print("Indique l'utilisateur : https://nico@... ou --user nico")
         return
 
     # Ctrl+C quitte proprement au lieu d'afficher une erreur.
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, Gtk.main_quit)
 
-    print(f"Adresse : {url}  (utilisateur : {user or 'aucun'})")
-    auth = Auth(user)
+    install_css()
+    auth = Auth(users)
     context = make_context()
     display = Gdk.Display.get_default()
     count = 1 if args.window else display.get_n_monitors()
-    windows = [make_window(display.get_monitor(i), context, url, auth, args.window, f"écran {i + 1}")
+    windows = [make_window(display.get_monitor(i), context, layer_list, auth, args.window,
+                           f"écran {i + 1}")
                for i in range(count)]
     Gtk.main()
     return windows
