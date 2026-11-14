@@ -141,8 +141,11 @@ def _combine(day, start):
     return day
 
 
-def occurrences(ev, range_start, range_end):
-    """Débuts des occurrences de ev qui touchent la période [range_start, range_end)."""
+def occurrences(ev, range_start, range_end, skip_before=None):
+    """Débuts des occurrences de ev qui touchent la période [range_start, range_end).
+
+    skip_before (date) : les occurrences antérieures sont comptées (pour COUNT) mais pas
+    calculées en détail, ce qui accélère beaucoup les vieilles répétitions."""
     start = ev["start"]
     rule = ev.get("rrule")
     if not rule:
@@ -203,6 +206,13 @@ def occurrences(ev, range_start, range_end):
     for day in candidates():
         if day < d0:
             continue
+        if skip_before is not None and day < skip_before:
+            n += 1
+            if count is not None and n > count:
+                return
+            if until is not None and _key(day) > _key(until):
+                return
+            continue
         occ = _combine(day, start)
         if until is not None and occ > until:
             return
@@ -244,7 +254,9 @@ def events_between(text, range_start, range_end, tz=None):
         skip = {_key(x) for x in ev["exdates"]}
         if "recurrence_id" not in ev:
             skip |= overridden.get(ev.get("uid"), set())
-        for occ in occurrences(ev, range_start, range_end):
+        first = range_start.date() if isinstance(range_start, datetime) else range_start
+        skip_before = first - timedelta(days=max(0, length.days) + 2)
+        for occ in occurrences(ev, range_start, range_end, skip_before):
             if _key(occ) in skip:
                 continue
             end = occ + length

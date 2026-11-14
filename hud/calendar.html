@@ -23,6 +23,10 @@
   .ev .loc { display: block; color: var(--hud-dim); font-size: .85em; overflow: hidden;
              text-overflow: ellipsis; white-space: nowrap; }
   .ev.allday { border-left-color: var(--accent); background: rgba(184, 119, 217, .14); }
+  /* Une couleur par agenda (calendar?ics=A&ics=B…) */
+  .ev.c1 { border-left-color: #ff9830; background: rgba(255, 152, 48, .12); }
+  .ev.c2 { border-left-color: #73bf69; background: rgba(115, 191, 105, .12); }
+  .ev.c3 { border-left-color: #f2495c; background: rgba(242, 73, 92, .12); }
   .ev.now { border-left-color: #73bf69; background: rgba(115, 191, 105, .16); }
   .ev.done { opacity: .45; }
   .empty { color: var(--hud-faint); font-size: 12px; text-align: center; margin-top: 6px; }
@@ -58,7 +62,7 @@ function render() {
   const fmt = (d, o) => d.toLocaleDateString("fr-FR", o);
   $("title").textContent = `SEMAINE ${weekNumber(monday)} · ${fmt(days[0], { day: "numeric" })} – ` +
                            `${fmt(days[6], { day: "numeric", month: "short" })}`.toUpperCase();
-  $("status").textContent = data.stale ? "hors ligne" : "";
+  $("status").textContent = data.stale ? "hors ligne" : (data.errors || []).length ? "⚠ " + data.errors[0] : "";
 
   $("week").innerHTML = days.map((d, i) => {
     const key = ymd(d);
@@ -67,11 +71,12 @@ function render() {
       : e.start.slice(0, 10) === key);
     const cls = ["day", key === today ? "today" : "", key < today ? "past" : "", i >= 5 ? "weekend" : ""].join(" ");
     const items = evs.map((e) => {
-      if (e.all_day) return `<div class="ev allday">${esc(e.title)}</div>`;
+      const cal = e.cal ? ` c${e.cal % 4}` : "";
+      if (e.all_day) return `<div class="ev allday${cal}">${esc(e.title)}</div>`;
       const s = new Date(e.start), en = new Date(e.end);
       const state = now >= s && now < en ? "now" : now >= en ? "done" : "";
       const loc = e.location ? `<span class="loc">${esc(e.location.split(",")[0])}</span>` : "";
-      return `<div class="ev ${state}"><span class="t">${pad(s.getHours())}:${pad(s.getMinutes())}</span>` +
+      return `<div class="ev ${state}${cal}"><span class="t">${pad(s.getHours())}:${pad(s.getMinutes())}</span>` +
              `${esc(e.title)}${loc}</div>`;
     }).join("") || '<span class="empty">—</span>';
     return `<div class="${cls}"><h3>${fmt(d, { weekday: "short" }).replace(".", "").toUpperCase()}` +

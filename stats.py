@@ -271,18 +271,29 @@ def cached(key, compute, ttl=CACHE_TTL):
 
 
 def api_calendar(q):
-    ics = q.get("ics", [""])[0]
-    if not ics:
+    """Un ou plusieurs agendas : calendar?ics=A&ics=B (ou ics=A,B). Adresses iCal (relues
+    toutes les 10 min) ou fichiers .ics locaux. Chaque événement garde le numéro de son
+    agenda (« cal ») pour la couleur."""
+    sources = [v.strip() for vals in q.get("ics", []) for v in vals.split(",") if v.strip()]
+    if not sources:
         return {"error": "adresse iCal manquante : calendar?ics=…", "events": []}
     weeks = max(1, min(4, int(q.get("weeks", ["1"])[0] or 1)))
-    text = cached(("ics", ics), lambda: {"text": feeds.fetch(ics, timeout=15)})
-    if "text" not in text:
-        return {"error": text.get("error"), "events": []}
     start, end = calendar_ics.week_bounds(weeks=weeks)
-    out = {"start": start.isoformat(), "end": end.isoformat(),
-           "events": calendar_ics.events_between(text["text"], start, end)}
-    if text.get("stale"):
-        out["stale"] = True
+    out = {"start": start.isoformat(), "end": end.isoformat(), "events": [], "errors": []}
+    for i, ics in enumerate(sources):
+        text = cached(("ics", ics), lambda ics=ics: {"text": feeds.fetch(ics, timeout=15)})
+        if "text" not in text:
+            out["errors"].append(f"agenda {i + 1} : {text.get('error')}")
+            continue
+        if text.get("stale"):
+            out["stale"] = True
+        events = cached(("week", ics, start.isoformat(), weeks, id(text["text"])),
+                        lambda t=text["text"]: {"events": calendar_ics.events_between(t, start, end)})
+        for ev in events.get("events", []):
+            out["events"].append({**ev, "cal": i})
+    out["events"].sort(key=lambda e: (e["start"][:10], not e["all_day"], e["start"]))
+    if out["errors"] and not out["events"]:
+        out["error"] = out["errors"][0]
     return out
 
 

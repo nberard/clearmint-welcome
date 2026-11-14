@@ -104,6 +104,10 @@ Adresse secrète au format iCal**. Copie-la dans `calendar?ics=…` (dans `layer
 pas besoin d'encoder l'adresse). Elle donne accès à ton agenda : garde-la pour toi
 (`layers.json` n'est pas envoyé sur GitHub). `calendar?ics=…&weeks=2` affiche 2 semaines.
 
+Plusieurs agendas : `calendar?ics=ADRESSE_1&ics=ADRESSE_2` (une couleur par agenda).
+L'adresse est relue toutes les 10 minutes. Un fichier `.ics` exporté marche aussi
+(`ics=/chemin/fichier.ics`), mais il ne se met plus à jour.
+
 ### Fil d'actualités : `news`
 
 - Google News, édition française par défaut. Options : `hl=fr&gl=FR` (langue, pays),
