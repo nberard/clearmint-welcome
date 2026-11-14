@@ -274,10 +274,11 @@ def events_between(text, range_start, range_end, tz=None):
     return out
 
 
-def week_bounds(today=None, weeks=1):
-    """Lundi 00:00 de la semaine en cours et le lundi suivant (ou + weeks semaines)."""
+def week_bounds(today=None, weeks=1, from_today=False):
+    """Lundi 00:00 de la semaine en cours et le lundi suivant (ou + weeks semaines).
+    Avec from_today : aujourd'hui 00:00 et 7 jours plus tard (semaine « glissante »)."""
     today = today or date.today()
-    monday = today - timedelta(days=today.weekday())
+    monday = today if from_today else today - timedelta(days=today.weekday())
     tz = local_tz()
     start = datetime.combine(monday, datetime.min.time()).replace(tzinfo=tz)
     return start, start + timedelta(days=7 * weeks)

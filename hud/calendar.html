@@ -13,13 +13,15 @@
   .day h3 { font-size: clamp(10px, 2.6vh, 14px); font-weight: normal; letter-spacing: .12em;
             display: flex; align-items: baseline; gap: .4em; color: var(--hud-dim); }
   .day h3 b { color: var(--hud); font-size: 1.25em; }
-  .day.today { border-top: 2px solid var(--hud); background: rgba(62, 242, 255, .05); }
+  .day.today { border-top: 2px solid var(--hud); background: rgba(62, 242, 255, .07);
+               box-shadow: inset 0 0 18px rgba(62, 242, 255, .08); }
   .day.today h3, .day.today h3 b { color: var(--hud); }
-  .day.past { opacity: .45; }
+  .day.past h3 { opacity: .55; }
   .day.weekend h3 { color: var(--accent); }
-  .ev { font-size: clamp(9px, 2.2vh, 13px); line-height: 1.25; padding: 3px 5px;
-        border-left: 2px solid var(--hud-dim); background: rgba(62, 242, 255, .06); }
-  .ev .t { color: var(--hud-dim); margin-right: .4em; }
+  .ev { font-size: clamp(11px, 2.8vh, 15px); line-height: 1.3; padding: 4px 6px;
+        border-left: 3px solid var(--hud); background: rgba(62, 242, 255, .12);
+        color: #e6fbff; text-shadow: none; }
+  .ev .t { color: var(--hud); font-weight: bold; margin-right: .4em; }
   .ev .loc { display: block; color: var(--hud-dim); font-size: .85em; overflow: hidden;
              text-overflow: ellipsis; white-space: nowrap; }
   .ev.allday { border-left-color: var(--accent); background: rgba(184, 119, 217, .14); }
@@ -28,7 +30,8 @@
   .ev.c2 { border-left-color: #73bf69; background: rgba(115, 191, 105, .12); }
   .ev.c3 { border-left-color: #f2495c; background: rgba(242, 73, 92, .12); }
   .ev.now { border-left-color: #73bf69; background: rgba(115, 191, 105, .16); }
-  .ev.done { opacity: .45; }
+  .ev.done { opacity: .6; }
+  .ev.done .t { color: var(--hud-dim); }
   .empty { color: var(--hud-faint); font-size: 12px; text-align: center; margin-top: 6px; }
   .msg { color: var(--warn); font-size: 12px; }
 </style>
@@ -60,7 +63,9 @@ function render() {
   const monday = new Date(data.start), now = new Date(), today = ymd(now);
   const days = [...Array(7)].map((_, i) => new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i));
   const fmt = (d, o) => d.toLocaleDateString("fr-FR", o);
-  $("title").textContent = `SEMAINE ${weekNumber(monday)} · ${fmt(days[0], { day: "numeric" })} – ` +
+  const rolling = new URLSearchParams(location.search).get("from") === "today";
+  $("title").textContent = `${rolling ? "7 PROCHAINS JOURS" : "SEMAINE " + weekNumber(monday)} · ` +
+                           `${fmt(days[0], { day: "numeric", month: "short" })} – ` +
                            `${fmt(days[6], { day: "numeric", month: "short" })}`.toUpperCase();
   $("status").textContent = data.stale ? "hors ligne" : (data.errors || []).length ? "⚠ " + data.errors[0] : "";
 
@@ -69,7 +74,7 @@ function render() {
     const evs = data.events.filter((e) => e.all_day
       ? e.start <= key && key < e.end                    // sur plusieurs jours
       : e.start.slice(0, 10) === key);
-    const cls = ["day", key === today ? "today" : "", key < today ? "past" : "", i >= 5 ? "weekend" : ""].join(" ");
+    const cls = ["day", key === today ? "today" : "", key < today ? "past" : "", [0, 6].includes(d.getDay()) ? "weekend" : ""].join(" ");
     const items = evs.map((e) => {
       const cal = e.cal ? ` c${e.cal % 4}` : "";
       if (e.all_day) return `<div class="ev allday${cal}">${esc(e.title)}</div>`;

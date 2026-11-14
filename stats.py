@@ -278,7 +278,7 @@ def api_calendar(q):
     if not sources:
         return {"error": "adresse iCal manquante : calendar?ics=…", "events": []}
     weeks = max(1, min(4, int(q.get("weeks", ["1"])[0] or 1)))
-    start, end = calendar_ics.week_bounds(weeks=weeks)
+    start, end = calendar_ics.week_bounds(weeks=weeks, from_today=q.get("from", [""])[0] == "today")
     out = {"start": start.isoformat(), "end": end.isoformat(), "events": [], "errors": []}
     for i, ics in enumerate(sources):
         text = cached(("ics", ics), lambda ics=ics: {"text": feeds.fetch(ics, timeout=15)})
@@ -304,13 +304,14 @@ def api_feed(q):
     key = ("feed", tuple(sorted((k, tuple(v)) for k, v in q.items())))
 
     def compute():
+        setup_errors = []
         sources = feeds.build_sources(
             hl=get("hl", "fr"), gl=get("gl", "FR"), q=get("q"), news=get("news", "1") != "0",
             yt_csv=get("yt") or None, yt_ids=get("ytids"), rss=get("rss"),
-            shorts=get("shorts", "0") == "1")
+            shorts=get("shorts", "0") == "1", errors=setup_errors)
         items, errors = feeds.merged(sources, limit=int(get("limit", "40") or 40),
                                      ratio=int(get("ratio", "2") or 0))
-        return {"items": items, "errors": errors[:5], "sources": len(sources)}
+        return {"items": items, "errors": (setup_errors + errors)[:5], "sources": len(sources)}
 
     data = cached(key, compute)
     for item in data.get("items", []):

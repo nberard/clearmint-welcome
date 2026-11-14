@@ -50,7 +50,9 @@ function render(data) {
     $("items").innerHTML = `<span class="msg">${esc(data.error || (data.errors || [])[0] || "aucun élément")}</span>`;
     return;
   }
-  $("status").textContent = (data.stale ? "hors ligne · " : "") + data.items.length + " éléments";
+  const warn = (data.errors || []).find((e) => e.startsWith("abonnements"));
+  $("status").textContent = (data.stale ? "hors ligne · " : "") + data.items.length + " éléments" +
+                            (warn ? " · ⚠ " + warn : "");
   $("items").innerHTML = data.items.map((it) => {
     const thumb = it.thumb ? `<img class="thumb" src="${esc(it.thumb)}" loading="lazy" alt="">` : "";
     const badge = `<span class="badge ${it.kind}">${it.kind === "youtube" ? "YT" : "INFO"}</span>`;

@@ -143,12 +143,21 @@ def interleave(items, ratio=2):
     return out
 
 
-def build_sources(hl="fr", gl="FR", q="", news=True, yt_csv=None, yt_ids="", rss="", shorts=False):
+def build_sources(hl="fr", gl="FR", q="", news=True, yt_csv=None, yt_ids="", rss="", shorts=False,
+                  errors=None):
+    """Liste des sources. Un fichier d'abonnements introuvable est signalé dans errors
+    sans empêcher les autres sources (actualités, flux RSS) de s'afficher."""
     sources = []
+    errors = errors if errors is not None else []
     if news:
         for query in [x.strip() for x in q.split(",")] if q else [None]:
             sources.append((google_news_url(hl, gl, query or None), parse_rss))
-    for cid in youtube_channels(yt_csv, yt_ids):
+    try:
+        channels = youtube_channels(yt_csv, yt_ids)
+    except OSError as e:
+        errors.append(f"abonnements YouTube : {e.strerror} ({yt_csv})")
+        channels = youtube_channels(None, yt_ids)
+    for cid in channels:
         sources.append((f"https://www.youtube.com/feeds/videos.xml?channel_id={cid}",
                         lambda xml: parse_youtube(xml, shorts)))
     for url in [u.strip() for u in rss.split(",") if u.strip()]:
