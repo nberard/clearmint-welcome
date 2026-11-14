@@ -28,7 +28,7 @@ python3 desktop_dashboard.py \
 # avec le panneau système intégré (météo, CPU, mémoire, réseau, disques)
 python3 desktop_dashboard.py \
   https://nico@health.touplitoui.me \
-  "stats?city=Paris|x=1%,y=2%,w=640,h=200"
+  "stats?city=Nîmes|x=1%,y=2%,w=640,h=200"
 
 # ou depuis un fichier
 python3 desktop_dashboard.py --config layers.example.json
@@ -68,7 +68,7 @@ libre sur `/` et `/home`), en style HUD sur fond transparent, mis à jour chaque
 seconde. Les mesures sont lues directement dans le système, aucun service extérieur
 sauf la météo (Open-Meteo, gratuit, sans clé).
 
-- `stats?city=Paris` : météo pour une ville ;
+- `stats?city=Nîmes` : météo pour une ville ;
 - `stats?lat=48.85&lon=2.35` : météo pour des coordonnées ;
 - `stats` : sans météo.
 
