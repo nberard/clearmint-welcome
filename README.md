@@ -119,6 +119,17 @@ L'adresse est relue toutes les 10 minutes. Un fichier `.ics` exporté marche aus
   → Toutes les données → seulement « abonnements »). Ou `ytids=UC…,UC…` à la main.
 - `ratio=2` : 2 actualités puis 1 vidéo (0 = tout par date) ; `shorts=1` garde les Shorts ;
   `rss=<adresse>,…` ajoute d'autres flux RSS.
+- **Clé d'API YouTube (recommandé)** : les flux publics de YouTube renvoient souvent des
+  erreurs 404/500. Avec une clé, l'appli passe par l'API officielle (fiable, gratuite :
+  ~3 500 unités/jour pour 150 chaînes, quota 10 000) et retire les Shorts.
+  Dans console.cloud.google.com : un projet → « API et services » → activer
+  **YouTube Data API v3** → « Identifiants » → **Créer une clé API** (restreins-la à
+  cette API). Puis :
+  ```bash
+  mkdir -p ~/.config/clearmint-welcome
+  echo 'TA_CLÉ' > ~/.config/clearmint-welcome/youtube-api-key
+  chmod 600 ~/.config/clearmint-welcome/youtube-api-key
+  ```
 - Diagnostic YouTube : `python3 feeds.py --yt ~/youtube-abonnements.csv` (fichier,
   chaînes trouvées, accès aux flux). Le journal du tableau de bord résume aussi chaque
   mise à jour : `grep "\[fil\]" ~/.cache/desktop-dashboard/dashboard.log`.

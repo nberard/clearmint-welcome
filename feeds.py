@@ -102,7 +102,7 @@ def youtube_channels(path=None, ids=""):
 
 
 SOURCE_CACHE = {}   # adresse -> (heure, éléments) : dernier résultat réussi de chaque source
-SOURCE_TTL = {"youtube": 1800, "default": 600}
+SOURCE_TTL = {"api": 3600, "youtube": 1800, "default": 600}  # API : 1 h pour rester dans le quota
 
 
 def _fetch_source(url, parser):
@@ -113,8 +113,9 @@ def _fetch_source(url, parser):
     recours on garde les vidéos déjà connues plutôt que de les faire disparaître.
     """
     import time
-    is_yt = "youtube.com/feeds" in url
-    ttl = SOURCE_TTL["youtube" if is_yt else "default"]
+    is_api = "googleapis.com/youtube" in url
+    is_yt = "youtube.com/feeds" in url or is_api
+    ttl = SOURCE_TTL["api" if is_api else "youtube" if is_yt else "default"]
     hit = SOURCE_CACHE.get(url)
     if hit and time.time() - hit[0] < ttl:
         return [dict(i) for i in hit[1]], None
@@ -129,7 +130,7 @@ def _fetch_source(url, parser):
             SOURCE_CACHE[url] = (time.time(), items)
             return [dict(i) for i in items], None
         except Exception as e:
-            error = f"{url}: {e}"
+            error = hide_key(f"{url}: {e}")
     if hit:  # ancienne version plutôt que rien
         return [dict(i) for i in hit[1]], error
     return [], error
@@ -181,8 +182,89 @@ def interleave(items, ratio=2):
     return out
 
 
+# --------------------------------------------------------------------------- API YouTube
+
+YT_API = "https://www.googleapis.com/youtube/v3"
+KEY_FILE = "~/.config/clearmint-welcome/youtube-api-key"
+
+
+def yt_api_key(value=""):
+    """Clé d'API YouTube : paramètre, variable YOUTUBE_API_KEY, ou fichier
+    ~/.config/clearmint-welcome/youtube-api-key (recommandé : hors du dépôt git)."""
+    if value:
+        return value.strip()
+    if os.environ.get("YOUTUBE_API_KEY"):
+        return os.environ["YOUTUBE_API_KEY"].strip()
+    path = os.path.expanduser(KEY_FILE)
+    if os.path.isfile(path):
+        with open(path, encoding="utf-8") as f:
+            return f.read().strip() or None
+    return None
+
+
+def hide_key(text):
+    """Ne jamais écrire la clé dans les journaux ou les messages d'erreur."""
+    return re.sub(r"key=[^&\s]+", "key=…", str(text))
+
+
+def api_uploads_url(channel_id, key, n=5):
+    """Dernières vidéos d'une chaîne via sa playlist « uploads » (UU… = UC… sans le C)."""
+    return (f"{YT_API}/playlistItems?part=snippet,contentDetails&maxResults={n}"
+            f"&playlistId=UU{channel_id[2:]}&key={key}")
+
+
+def parse_playlist_items(text):
+    """Réponse JSON de playlistItems.list -> éléments du fil."""
+    import json
+    data = json.loads(text)
+    if "error" in data:
+        raise ValueError(data["error"].get("message", "erreur de l'API YouTube"))
+    items = []
+    for it in data.get("items", []):
+        sn = it.get("snippet", {})
+        vid = sn.get("resourceId", {}).get("videoId") or it.get("contentDetails", {}).get("videoId")
+        if not vid or sn.get("title") in ("Private video", "Deleted video"):
+            continue
+        th = sn.get("thumbnails", {})
+        thumb = (th.get("medium") or th.get("high") or th.get("default") or {}).get("url")
+        items.append({"kind": "youtube", "title": sn.get("title", ""), "video_id": vid,
+                      "url": f"https://www.youtube.com/watch?v={vid}",
+                      "source": sn.get("videoOwnerChannelTitle") or sn.get("channelTitle", ""),
+                      "date": _date(it.get("contentDetails", {}).get("videoPublishedAt")
+                                    or sn.get("publishedAt")),
+                      "thumb": thumb, "site": "youtube.com"})
+    return items
+
+
+def iso_duration(text):
+    """'PT1H2M3S' -> secondes."""
+    m = re.fullmatch(r"P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", text or "")
+    if not m:
+        return None
+    d, h, mi, sec = (int(x or 0) for x in m.groups())
+    return ((d * 24 + h) * 60 + mi) * 60 + sec
+
+
+DURATIONS = {}  # identifiant de vidéo -> durée en secondes (ne change pas : cache permanent)
+
+
+def drop_shorts(items, key, max_seconds=60):
+    """Retire les Shorts (vidéos de 60 s ou moins), durées demandées par paquets de 50."""
+    import json
+    ids = [i["video_id"] for i in items if i.get("video_id") and i["video_id"] not in DURATIONS]
+    for start in range(0, len(ids), 50):
+        batch = ",".join(ids[start:start + 50])
+        try:
+            data = json.loads(fetch(f"{YT_API}/videos?part=contentDetails&id={batch}&key={key}"))
+        except Exception:
+            break  # en cas d'erreur, on garde les vidéos plutôt que de les perdre
+        for v in data.get("items", []):
+            DURATIONS[v["id"]] = iso_duration(v.get("contentDetails", {}).get("duration"))
+    return [i for i in items if not (i.get("video_id") and (DURATIONS.get(i["video_id"]) or 999) <= max_seconds)]
+
+
 def build_sources(hl="fr", gl="FR", q="", news=True, yt_csv=None, yt_ids="", rss="", shorts=False,
-                  errors=None):
+                  errors=None, yt_key=None):
     """Liste des sources. Un fichier d'abonnements introuvable est signalé dans errors
     sans empêcher les autres sources (actualités, flux RSS) de s'afficher."""
     sources = []
@@ -196,8 +278,11 @@ def build_sources(hl="fr", gl="FR", q="", news=True, yt_csv=None, yt_ids="", rss
         errors.append(f"abonnements YouTube : {e.strerror} ({yt_csv})")
         channels = youtube_channels(None, yt_ids)
     for cid in channels:
-        sources.append((f"https://www.youtube.com/feeds/videos.xml?channel_id={cid}",
-                        lambda xml: parse_youtube(xml, shorts)))
+        if yt_key:   # API officielle : fiable (les flux publics renvoient souvent 404/500)
+            sources.append((api_uploads_url(cid, yt_key), parse_playlist_items))
+        else:
+            sources.append((f"https://www.youtube.com/feeds/videos.xml?channel_id={cid}",
+                            lambda xml: parse_youtube(xml, shorts)))
     for url in [u.strip() for u in rss.split(",") if u.strip()]:
         sources.append((url, parse_rss))
     return sources
@@ -226,6 +311,22 @@ def diagnose(yt_csv=None, yt_ids="", sample=5):
         print("   ✗ aucune chaîne : le fichier doit contenir des identifiants UC… (abonnements.csv)")
         return
 
+    key = yt_api_key()
+    if key:
+        print(f"\n2. API YouTube (clé trouvée, {min(sample, len(ids))} chaînes testées)")
+        ok = 0
+        for cid in ids[:sample]:
+            try:
+                vids = parse_playlist_items(fetch(api_uploads_url(cid, key)))
+                print(f"   ✓ {cid} : {len(vids)} vidéos" + (f", {vids[0]['source']}" if vids else ""))
+                ok += 1
+            except Exception as e:
+                print(f"   ✗ {cid} : {hide_key(e)}")
+        print("\n3. Bilan")
+        print(f"   {ok}/{min(sample, len(ids))} chaînes lisibles par l'API." if ok else
+              "   L'API ne répond pas : vérifie la clé et que « YouTube Data API v3 » est activée.")
+        return
+    print(f"\n   (pas de clé d'API : test des flux publics ; voir {KEY_FILE})")
     print(f"\n2. Accès aux flux ({min(sample, len(ids))} chaînes testées)")
     ok = 0
     for cid in ids[:sample]:

@@ -99,5 +99,72 @@ class SourceCache(unittest.TestCase):
         self.assertEqual(len(merged), 3)        # et le mélange marche toujours
 
 
+PLAYLIST = """{"items": [
+ {"snippet": {"title": "Vraie vidéo", "channelTitle": "Chaîne", "videoOwnerChannelTitle": "Chaîne Test",
+   "resourceId": {"videoId": "AAA"}, "thumbnails": {"medium": {"url": "https://i.ytimg.com/vi/AAA/mq.jpg"}}},
+  "contentDetails": {"videoId": "AAA", "videoPublishedAt": "2026-11-14T10:00:00Z"}},
+ {"snippet": {"title": "Short", "resourceId": {"videoId": "BBB"}, "thumbnails": {}},
+  "contentDetails": {"videoId": "BBB", "videoPublishedAt": "2026-11-14T11:00:00Z"}},
+ {"snippet": {"title": "Private video", "resourceId": {"videoId": "CCC"}}, "contentDetails": {}}
+]}"""
+
+
+class YoutubeApi(unittest.TestCase):
+    def test_parse_playlist_items(self):
+        items = feeds.parse_playlist_items(PLAYLIST)
+        self.assertEqual([i["title"] for i in items], ["Vraie vidéo", "Short"])  # vidéo privée ignorée
+        self.assertEqual(items[0]["source"], "Chaîne Test")
+        self.assertEqual(items[0]["url"], "https://www.youtube.com/watch?v=AAA")
+        self.assertEqual(items[0]["thumb"], "https://i.ytimg.com/vi/AAA/mq.jpg")
+        self.assertEqual(items[0]["date"].hour, 10)
+
+    def test_api_error_raises(self):
+        with self.assertRaises(ValueError):
+            feeds.parse_playlist_items('{"error": {"message": "API key not valid"}}')
+
+    def test_uploads_url_and_hidden_key(self):
+        url = feeds.api_uploads_url("UCsXVk37bltHxD1rDPwtNM8Q", "SECRET123")
+        self.assertIn("playlistId=UUsXVk37bltHxD1rDPwtNM8Q", url)
+        self.assertNotIn("SECRET123", feeds.hide_key(f"{url}: HTTP 403"))
+
+    def test_iso_duration(self):
+        self.assertEqual(feeds.iso_duration("PT45S"), 45)
+        self.assertEqual(feeds.iso_duration("PT1H2M3S"), 3723)
+        self.assertEqual(feeds.iso_duration("P1DT1M"), 86460)
+
+    def test_drop_shorts(self):
+        items = feeds.parse_playlist_items(PLAYLIST)
+        real_fetch = feeds.fetch
+        feeds.DURATIONS.clear()
+        feeds.fetch = lambda url, timeout=10: ('{"items": [{"id": "AAA", "contentDetails": {"duration": "PT12M"}},'
+                                               ' {"id": "BBB", "contentDetails": {"duration": "PT30S"}}]}')
+        try:
+            kept = feeds.drop_shorts(items, "KEY")
+        finally:
+            feeds.fetch = real_fetch
+        self.assertEqual([i["title"] for i in kept], ["Vraie vidéo"])
+
+    def test_key_from_file(self):
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "key")
+        with open(path, "w") as f:
+            f.write("  ABC  \n")
+        old_file, old_env = feeds.KEY_FILE, os.environ.pop("YOUTUBE_API_KEY", None)
+        feeds.KEY_FILE = path
+        try:
+            self.assertEqual(feeds.yt_api_key(), "ABC")
+            self.assertEqual(feeds.yt_api_key("XYZ"), "XYZ")
+        finally:
+            feeds.KEY_FILE = old_file
+            if old_env:
+                os.environ["YOUTUBE_API_KEY"] = old_env
+
+    def test_build_sources_uses_api_with_key(self):
+        src = feeds.build_sources(news=False, yt_ids="UCsXVk37bltHxD1rDPwtNM8Q", yt_key="K")
+        self.assertIn("googleapis.com/youtube/v3/playlistItems", src[0][0])
+        src = feeds.build_sources(news=False, yt_ids="UCsXVk37bltHxD1rDPwtNM8Q")
+        self.assertIn("youtube.com/feeds/videos.xml", src[0][0])
+
+
 if __name__ == "__main__":
     unittest.main()

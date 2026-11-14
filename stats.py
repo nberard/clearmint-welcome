@@ -349,13 +349,16 @@ def api_feed(q):
 
     def compute():
         setup_errors = []
+        key = feeds.yt_api_key(get("ytkey"))
         sources = feeds.build_sources(
             hl=get("hl", "fr"), gl=get("gl", "FR"), q=get("q"), news=get("news", "1") != "0",
             yt_csv=get("yt") or None, yt_ids=get("ytids"), rss=get("rss"),
-            shorts=get("shorts", "0") == "1", errors=setup_errors)
+            shorts=get("shorts", "0") == "1", errors=setup_errors, yt_key=key)
         t = time.time()
         items, errors = feeds.merged(sources, limit=int(get("limit", "40") or 40),
                                      ratio=int(get("ratio", "2") or 0))
+        if key and get("shorts", "0") != "1":
+            items = feeds.drop_shorts(items, key)
         videos = sum(i["kind"] == "youtube" for i in items)
         print(f"[fil] {len(sources)} sources lues en {time.time() - t:.0f} s : "
               f"{len(items) - videos} actualités, {videos} vidéos, {len(setup_errors + errors)} erreurs", flush=True)
