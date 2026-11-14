@@ -6,81 +6,111 @@
 <link rel="stylesheet" href="hud.css">
 <style>
   .card { height: 100%; display: flex; flex-direction: column; gap: 8px; }
-  .head { display: flex; justify-content: space-between; align-items: baseline; }
-  .list { flex: 1; overflow: hidden; position: relative;
-          mask-image: linear-gradient(to bottom, black 92%, transparent);
-          -webkit-mask-image: linear-gradient(to bottom, black 92%, transparent); }
-  .items { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 8px 14px; }
-  .item { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; padding: 4px;
-          border-left: 2px solid transparent; transition: background .2s; }
+  .head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .cols { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; min-height: 0; }
+  .cols.single { grid-template-columns: 1fr; }
+  .col { display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+  .col > .label { flex: none; }
+  .scroll { flex: 1; overflow: hidden; position: relative;
+            mask-image: linear-gradient(to bottom, black 90%, transparent);
+            -webkit-mask-image: linear-gradient(to bottom, black 90%, transparent); }
+
+  /* Actualités : liste avec l'icône du site */
+  .news { display: flex; flex-direction: column; gap: 8px; }
+  .item { cursor: pointer; padding: 4px 6px; border-left: 2px solid transparent; transition: background .2s; }
   .item:hover { background: rgba(62, 242, 255, .08); border-left-color: var(--hud); }
-  .thumb { width: clamp(64px, 14vh, 112px); aspect-ratio: 16 / 9; object-fit: cover; flex: none;
-           border: 1px solid rgba(242, 73, 92, .5); }
-  .txt { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
   .title { font-size: clamp(10px, 2.4vh, 14px); line-height: 1.3; color: #d8f6ff; text-shadow: none;
            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .meta { font-size: clamp(9px, 1.9vh, 11px); color: var(--hud-dim); white-space: nowrap;
-          overflow: hidden; text-overflow: ellipsis; }
-  .badge { display: inline-block; font-size: .85em; padding: 0 4px; margin-right: 6px; letter-spacing: .1em;
-           text-shadow: none; color: #03070c; }
-  .badge.news { background: #5794f2; }
-  .badge.youtube { background: #f2495c; }
+  .meta { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: clamp(9px, 1.9vh, 11px);
+          color: var(--hud-dim); white-space: nowrap; overflow: hidden; }
+  .meta img { width: 14px; height: 14px; border-radius: 3px; flex: none; background: rgba(255,255,255,.08); }
+
+  /* Vidéos : vignettes */
+  .videos { display: grid; grid-template-columns: repeat(auto-fill, minmax(clamp(140px, 30vh, 220px), 1fr));
+            gap: 10px; }
+  .video { cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
+  .video .pic { position: relative; aspect-ratio: 16 / 9; overflow: hidden;
+                border: 1px solid rgba(242, 73, 92, .45); box-shadow: 0 0 8px rgba(242, 73, 92, .15); }
+  .video img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .3s; }
+  .video:hover img { transform: scale(1.05); }
+  .video .ago { position: absolute; right: 4px; bottom: 4px; font-size: 10px; padding: 1px 4px;
+                background: rgba(3, 7, 12, .8); color: #fff; text-shadow: none; }
+  .video .title { -webkit-line-clamp: 2; }
+  .video .chan { font-size: clamp(9px, 1.9vh, 11px); color: #f2495c; text-shadow: none;
+                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .msg { color: var(--warn); font-size: 12px; }
 </style>
 </head>
 <body>
   <section class="card">
     <div class="head"><span class="label">ACTUALITÉS · VIDÉOS</span><span class="label" id="status"></span></div>
-    <div class="list" id="list"><div class="items" id="items"><span class="msg">chargement…</span></div></div>
+    <div class="cols" id="cols">
+      <div class="col"><span class="label dim">▸ INFOS</span>
+        <div class="scroll"><div class="news" id="news"><span class="msg">chargement…</span></div></div></div>
+      <div class="col" id="videos-col"><span class="label dim" style="color:#f2495c">▸ YOUTUBE · ABONNEMENTS</span>
+        <div class="scroll"><div class="videos" id="videos"></div></div></div>
+    </div>
   </section>
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const icon = (site) => site ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(site)}&sz=32` : "";
 
 function ago(iso) {
   if (!iso) return "";
   const m = Math.round((Date.now() - new Date(iso)) / 60000);
-  if (m < 60) return `il y a ${Math.max(1, m)} min`;
-  if (m < 1440) return `il y a ${Math.round(m / 60)} h`;
-  return `il y a ${Math.round(m / 1440)} j`;
+  if (m < 60) return `${Math.max(1, m)} min`;
+  if (m < 1440) return `${Math.round(m / 60)} h`;
+  return `${Math.round(m / 1440)} j`;
 }
 
 function render(data) {
-  if (!data.items || !data.items.length) {
-    $("items").innerHTML = `<span class="msg">${esc(data.error || (data.errors || [])[0] || "aucun élément")}</span>`;
-    return;
-  }
+  const items = data.items || [];
+  const news = items.filter((i) => i.kind !== "youtube").slice(0, 40);
+  const videos = items.filter((i) => i.kind === "youtube").slice(0, 24);
   const warn = (data.errors || []).find((e) => e.startsWith("abonnements"));
-  $("status").textContent = (data.stale ? "hors ligne · " : "") + data.items.length + " éléments" +
-                            (warn ? " · ⚠ " + warn : "");
-  $("items").innerHTML = data.items.map((it) => {
-    const thumb = it.thumb ? `<img class="thumb" src="${esc(it.thumb)}" loading="lazy" alt="">` : "";
-    const badge = `<span class="badge ${it.kind}">${it.kind === "youtube" ? "YT" : "INFO"}</span>`;
-    return `<div class="item" data-url="${esc(it.url)}">${thumb}<div class="txt">` +
-           `<span class="title">${esc(it.title)}</span>` +
-           `<span class="meta">${badge}${esc(it.source)} · ${ago(it.date)}</span></div></div>`;
-  }).join("");
+  $("status").textContent = (data.stale ? "hors ligne · " : "") +
+    `${news.length} infos · ${videos.length} vidéos` + (warn ? " · ⚠ " + warn : "");
+
+  $("news").innerHTML = news.length ? news.map((it) =>
+    `<div class="item" data-url="${esc(it.url)}"><span class="title">${esc(it.title)}</span>` +
+    `<span class="meta">${it.site ? `<img src="${icon(it.site)}" alt="">` : ""}` +
+    `${esc(it.source)} · il y a ${ago(it.date)}</span></div>`).join("")
+    : `<span class="msg">${esc(data.error || (data.errors || [])[0] || "aucune actualité")}</span>`;
+
+  // Sans vidéos (pas de liste d'abonnements), les actualités prennent toute la largeur.
+  $("videos-col").style.display = videos.length ? "" : "none";
+  $("cols").classList.toggle("single", !videos.length);
+  $("videos").innerHTML = videos.map((it) =>
+    `<div class="video" data-url="${esc(it.url)}"><div class="pic">` +
+    `<img src="${esc(it.thumb || "")}" loading="lazy" alt=""><span class="ago">${ago(it.date)}</span></div>` +
+    `<span class="title">${esc(it.title)}</span><span class="chan">${esc(it.source)}</span></div>`).join("");
 }
 
 // Un clic ouvre l'article ou la vidéo dans le navigateur (pas dans le fond d'écran).
-$("items").addEventListener("click", (e) => {
-  const it = e.target.closest(".item");
+document.addEventListener("click", (e) => {
+  const it = e.target.closest("[data-url]");
   if (it) fetch("/api/open?url=" + encodeURIComponent(it.dataset.url));
 });
 
-// Défilement lent et continu ; il s'arrête quand la souris est dessus.
-let hover = false;
-$("list").addEventListener("mouseenter", () => { hover = true; });
-$("list").addEventListener("mouseleave", () => { hover = false; });
-setInterval(() => {
-  const l = $("list");
-  if (hover || l.scrollHeight <= l.clientHeight) return;
-  l.scrollTop = l.scrollTop + l.clientHeight >= l.scrollHeight - 1 ? 0 : l.scrollTop + 1;
-}, 60);
+// Chaque colonne défile lentement ; elle s'arrête sous la souris.
+for (const box of document.querySelectorAll(".scroll")) {
+  let hover = false;
+  box.addEventListener("mouseenter", () => { hover = true; });
+  box.addEventListener("mouseleave", () => { hover = false; });
+  setInterval(() => {
+    if (hover || box.scrollHeight <= box.clientHeight) return;
+    box.scrollTop = box.scrollTop + box.clientHeight >= box.scrollHeight - 1 ? 0 : box.scrollTop + 1;
+  }, 70);
+}
 
 async function load() {
+  // ratio=0 et une grande limite : la page sépare elle-même actualités et vidéos.
+  const q = new URLSearchParams(location.search);
+  q.set("ratio", "0");
+  if (!q.has("limit")) q.set("limit", "300");
   try {
-    render(await (await fetch("/api/feed" + location.search, { cache: "no-store" })).json());
+    render(await (await fetch("/api/feed?" + q, { cache: "no-store" })).json());
     document.body.classList.remove("offline");
   } catch (e) {
     document.body.classList.add("offline");

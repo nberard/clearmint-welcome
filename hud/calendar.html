@@ -18,20 +18,25 @@
   .day.today h3, .day.today h3 b { color: var(--hud); }
   .day.past h3 { opacity: .55; }
   .day.weekend h3 { color: var(--accent); }
-  .ev { font-size: clamp(11px, 2.8vh, 15px); line-height: 1.3; padding: 4px 6px;
-        border-left: 3px solid var(--hud); background: rgba(62, 242, 255, .12);
-        color: #e6fbff; text-shadow: none; }
-  .ev .t { color: var(--hud); font-weight: bold; margin-right: .4em; }
-  .ev .loc { display: block; color: var(--hud-dim); font-size: .85em; overflow: hidden;
+  /* Couleurs de Google Agenda, translucides : bleu « Paon » pour les événements,
+     orange « Mandarine » pour les tâches et rappels (événements sans durée). */
+  .ev { font-size: clamp(11px, 2.8vh, 15px); line-height: 1.3; padding: 4px 6px; border-radius: 4px;
+        border-left: 4px solid #039be5; background: rgba(3, 155, 229, .30);
+        color: #f2fbff; text-shadow: none; }
+  .ev .t { color: #8fd8ff; font-weight: bold; margin-right: .4em; }
+  .ev .loc { display: block; color: rgba(242, 251, 255, .65); font-size: .85em; overflow: hidden;
              text-overflow: ellipsis; white-space: nowrap; }
-  .ev.allday { border-left-color: var(--accent); background: rgba(184, 119, 217, .14); }
-  /* Une couleur par agenda (calendar?ics=A&ics=B…) */
-  .ev.c1 { border-left-color: #ff9830; background: rgba(255, 152, 48, .12); }
-  .ev.c2 { border-left-color: #73bf69; background: rgba(115, 191, 105, .12); }
-  .ev.c3 { border-left-color: #f2495c; background: rgba(242, 73, 92, .12); }
-  .ev.now { border-left-color: #73bf69; background: rgba(115, 191, 105, .16); }
-  .ev.done { opacity: .6; }
-  .ev.done .t { color: var(--hud-dim); }
+  .ev.allday { background: rgba(3, 155, 229, .50); }
+  .ev.task { border-left-color: #f4511e; background: rgba(244, 81, 30, .30); }
+  .ev.task .t { color: #ffb08f; }
+  .ev.task .t::before { content: "✓ "; }
+  /* Agendas suivants (calendar?ics=A&ics=B…) : Sauge, Raisin, Flamant rose */
+  .ev.c1 { border-left-color: #33b679; background: rgba(51, 182, 121, .30); }
+  .ev.c1.allday { background: rgba(51, 182, 121, .48); }
+  .ev.c2 { border-left-color: #8e24aa; background: rgba(142, 36, 170, .35); }
+  .ev.c3 { border-left-color: #e67c73; background: rgba(230, 124, 115, .32); }
+  .ev.now { box-shadow: 0 0 0 1px #73bf69, 0 0 12px rgba(115, 191, 105, .55); }
+  .ev.done { opacity: .55; }
   .empty { color: var(--hud-faint); font-size: 12px; text-align: center; margin-top: 6px; }
   .msg { color: var(--warn); font-size: 12px; }
 </style>
@@ -79,9 +84,10 @@ function render() {
       const cal = e.cal ? ` c${e.cal % 4}` : "";
       if (e.all_day) return `<div class="ev allday${cal}">${esc(e.title)}</div>`;
       const s = new Date(e.start), en = new Date(e.end);
-      const state = now >= s && now < en ? "now" : now >= en ? "done" : "";
+      const task = en - s === 0;                     // sans durée : tâche ou rappel
+      const state = (task ? now >= s : now >= s && now < en) ? (task ? "done" : "now") : now >= en ? "done" : "";
       const loc = e.location ? `<span class="loc">${esc(e.location.split(",")[0])}</span>` : "";
-      return `<div class="ev ${state}${cal}"><span class="t">${pad(s.getHours())}:${pad(s.getMinutes())}</span>` +
+      return `<div class="ev ${state}${cal}${task ? " task" : ""}"><span class="t">${pad(s.getHours())}:${pad(s.getMinutes())}</span>` +
              `${esc(e.title)}${loc}</div>`;
     }).join("") || '<span class="empty">—</span>';
     return `<div class="${cls}"><h3>${fmt(d, { weekday: "short" }).replace(".", "").toUpperCase()}` +

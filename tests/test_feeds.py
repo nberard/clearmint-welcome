@@ -82,5 +82,22 @@ class Merge(unittest.TestCase):
         self.assertEqual([i["title"] for i in items], ["Titre A", "Titre B", "Titre C", "Vidéo 1"])
 
 
+class SourceCache(unittest.TestCase):
+    def test_keeps_last_good_result_when_source_fails(self):
+        f = tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False, encoding="utf-8")
+        f.write(RSS)
+        f.close()
+        feeds.SOURCE_CACHE.clear()
+        items, err = feeds._fetch_source(f.name, feeds.parse_rss)
+        self.assertEqual(len(items), 3)
+        os.unlink(f.name)                       # la source disparaît...
+        feeds.SOURCE_CACHE[f.name] = (0, feeds.SOURCE_CACHE[f.name][1])   # ...et le cache expire
+        items, err = feeds._fetch_source(f.name, feeds.parse_rss)
+        self.assertEqual(len(items), 3)         # on garde les anciens éléments
+        self.assertIsNotNone(err)               # mais l'erreur est signalée
+        merged, _ = feeds.merged([(f.name, feeds.parse_rss)])
+        self.assertEqual(len(merged), 3)        # et le mélange marche toujours
+
+
 if __name__ == "__main__":
     unittest.main()

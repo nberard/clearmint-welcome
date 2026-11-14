@@ -47,11 +47,14 @@ def parse_rss(xml, kind="news"):
     items = []
     for it in root.iter("item"):
         title = (it.findtext("title") or "").strip()
-        source = (it.findtext("source") or "").strip()
+        src = it.find("source")
+        source = (src.text or "").strip() if src is not None else ""
+        site = urllib.parse.urlsplit(src.get("url", "")).hostname if src is not None else None
         if source and title.endswith(" - " + source):
             title = title[: -len(source) - 3]       # Google News ajoute « - Source »
         items.append({"kind": kind, "title": title, "url": (it.findtext("link") or "").strip(),
-                      "source": source, "date": _date(it.findtext("pubDate")), "thumb": None})
+                      "source": source, "date": _date(it.findtext("pubDate")), "thumb": None,
+                      "site": site or urllib.parse.urlsplit(it.findtext("link") or "").hostname})
     return items
 
 
@@ -69,7 +72,8 @@ def parse_youtube(xml, shorts=False):
         items.append({"kind": "youtube", "title": e.findtext("a:title", default="", namespaces=NS),
                       "url": url, "source": e.findtext("a:author/a:name", default=channel, namespaces=NS),
                       "date": _date(e.findtext("a:published", namespaces=NS)),
-                      "thumb": thumb.get("url") if thumb is not None else None})
+                      "thumb": thumb.get("url") if thumb is not None else None,
+                      "site": "youtube.com"})
     return items
 
 
@@ -97,7 +101,41 @@ def youtube_channels(path=None, ids=""):
     return list(dict.fromkeys(out))  # sans doublons, ordre conservé
 
 
-def merged(sources, limit=40, workers=8, ratio=2):
+SOURCE_CACHE = {}   # adresse -> (heure, éléments) : dernier résultat réussi de chaque source
+SOURCE_TTL = {"youtube": 1800, "default": 600}
+
+
+def _fetch_source(url, parser):
+    """Éléments d'une source, avec un cache par source.
+
+    YouTube : 30 min (beaucoup de chaînes, YouTube limite les requêtes trop fréquentes),
+    nouvel essai via la playlist « uploads » de la chaîne en cas d'erreur, et en dernier
+    recours on garde les vidéos déjà connues plutôt que de les faire disparaître.
+    """
+    import time
+    is_yt = "youtube.com/feeds" in url
+    ttl = SOURCE_TTL["youtube" if is_yt else "default"]
+    hit = SOURCE_CACHE.get(url)
+    if hit and time.time() - hit[0] < ttl:
+        return [dict(i) for i in hit[1]], None
+    urls = [url]
+    m = re.search(r"channel_id=UC([\w-]{22})", url)
+    if m:
+        urls.append(f"https://www.youtube.com/feeds/videos.xml?playlist_id=UU{m.group(1)}")
+    error = None
+    for u in urls:
+        try:
+            items = parser(fetch(u))
+            SOURCE_CACHE[url] = (time.time(), items)
+            return [dict(i) for i in items], None
+        except Exception as e:
+            error = f"{url}: {e}"
+    if hit:  # ancienne version plutôt que rien
+        return [dict(i) for i in hit[1]], error
+    return [], error
+
+
+def merged(sources, limit=40, workers=6, ratio=2):
     """Récupère toutes les sources en parallèle et mélange les éléments par date.
 
     sources : liste de (adresse, analyseur). ratio : actualités par vidéo (0 = par date).
@@ -107,10 +145,7 @@ def merged(sources, limit=40, workers=8, ratio=2):
 
     def one(src):
         url, parser = src
-        try:
-            return parser(fetch(url)), None
-        except Exception as e:  # une source en panne ne doit pas tout bloquer
-            return [], f"{url}: {e}"
+        return _fetch_source(url, parser)  # une source en panne ne bloque pas les autres
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         for got, err in pool.map(one, sources):
@@ -118,6 +153,9 @@ def merged(sources, limit=40, workers=8, ratio=2):
             if err:
                 errors.append(err)
     epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    for i in items:
+        if isinstance(i["date"], str):
+            i["date"] = _date(i["date"])
     items.sort(key=lambda i: i["date"] or epoch, reverse=True)
     items = interleave(items, ratio)
     for i in items:
