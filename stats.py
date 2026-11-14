@@ -8,6 +8,7 @@ jour chaque seconde.
 """
 import glob
 import json
+import re
 import os
 import shutil
 import subprocess
@@ -183,6 +184,48 @@ def battery():
     return None
 
 
+def local_ip():
+    """(adresse IP locale, interface) de la connexion par défaut, sans envoyer de paquet."""
+    import socket
+    ip = None
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("192.0.2.1", 9))  # adresse de test : rien n'est envoyé
+            ip = sock.getsockname()[0]
+    except OSError:
+        return None, None
+    iface = None
+    for line in _read("/proc/net/route").splitlines()[1:]:
+        f = line.split()
+        if len(f) > 1 and f[1] == "00000000":  # route par défaut
+            iface = f[0]
+            break
+    return ip, iface
+
+
+PUBLIC_IP = {"ip": None, "checked": 0.0}
+
+
+def watch_public_ip(interval=300):
+    """IP publique, vérifiée toutes les 5 min en arrière-plan (1 min après un échec)."""
+    import urllib.request
+
+    def loop():
+        while True:
+            try:
+                req = urllib.request.Request("https://api.ipify.org", headers={"User-Agent": "clearmint"})
+                with urllib.request.urlopen(req, timeout=8) as r:
+                    ip = r.read().decode().strip()
+                if re.fullmatch(r"[0-9a-fA-F:.]{3,45}", ip):
+                    PUBLIC_IP.update(ip=ip, checked=time.time())
+                delay = interval
+            except Exception:
+                delay = 60
+            time.sleep(delay)
+
+    threading.Thread(target=loop, daemon=True).start()
+
+
 def system_info():
     up = _read("/proc/uptime").split()
     load = os.getloadavg()
@@ -191,9 +234,10 @@ def system_info():
         if line.startswith("PRETTY_NAME="):
             distro = line.split("=", 1)[1].strip('"')
     u = os.uname()
+    ip, iface = local_ip()
     return {"host": u.nodename, "kernel": u.release, "distro": distro,
             "uptime": float(up[0]) if up else 0, "load": [round(x, 2) for x in load],
-            "battery": battery()}
+            "battery": battery(), "local_ip": ip, "iface": iface, "public_ip": PUBLIC_IP["ip"]}
 
 
 class Sampler(threading.Thread):
@@ -309,8 +353,14 @@ def api_feed(q):
             hl=get("hl", "fr"), gl=get("gl", "FR"), q=get("q"), news=get("news", "1") != "0",
             yt_csv=get("yt") or None, yt_ids=get("ytids"), rss=get("rss"),
             shorts=get("shorts", "0") == "1", errors=setup_errors)
+        t = time.time()
         items, errors = feeds.merged(sources, limit=int(get("limit", "40") or 40),
                                      ratio=int(get("ratio", "2") or 0))
+        videos = sum(i["kind"] == "youtube" for i in items)
+        print(f"[fil] {len(sources)} sources lues en {time.time() - t:.0f} s : "
+              f"{len(items) - videos} actualités, {videos} vidéos, {len(setup_errors + errors)} erreurs", flush=True)
+        for err in (setup_errors + errors)[:3]:
+            print(f"[fil]   ✗ {err}", flush=True)
         return {"items": items, "errors": (setup_errors + errors)[:5], "sources": len(sources)}
 
     data = cached(key, compute)
@@ -367,6 +417,7 @@ def start_server(port=8765, tries=20):
     """Démarre le serveur en arrière-plan ; essaie les ports suivants si occupé."""
     sampler = Sampler()
     sampler.start()
+    watch_public_ip()
     for p in range(port, port + tries):
         try:
             server = ThreadingHTTPServer(("127.0.0.1", p), make_handler(sampler))

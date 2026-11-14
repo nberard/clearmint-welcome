@@ -201,3 +201,62 @@ def build_sources(hl="fr", gl="FR", q="", news=True, yt_csv=None, yt_ids="", rss
     for url in [u.strip() for u in rss.split(",") if u.strip()]:
         sources.append((url, parse_rss))
     return sources
+
+
+# --------------------------------------------------------------------------- diagnostic
+
+def diagnose(yt_csv=None, yt_ids="", sample=5):
+    """Vérifie pas à pas la lecture YouTube : fichier, chaînes trouvées, accès aux flux."""
+    import time
+    import urllib.error
+    print("1. Liste des chaînes")
+    if yt_csv:
+        path = os.path.expanduser(yt_csv)
+        if not os.path.isfile(path):
+            print(f"   ✗ fichier introuvable : {path}")
+            return
+        print(f"   fichier : {path} ({os.path.getsize(path)} octets)")
+    try:
+        ids = youtube_channels(yt_csv, yt_ids)
+    except Exception as e:
+        print(f"   ✗ lecture impossible : {e}")
+        return
+    print(f"   {len(ids)} chaînes trouvées" + (f", ex. {', '.join(ids[:3])}" if ids else ""))
+    if not ids:
+        print("   ✗ aucune chaîne : le fichier doit contenir des identifiants UC… (abonnements.csv)")
+        return
+
+    print(f"\n2. Accès aux flux ({min(sample, len(ids))} chaînes testées)")
+    ok = 0
+    for cid in ids[:sample]:
+        for label, url in (("chaîne", f"https://www.youtube.com/feeds/videos.xml?channel_id={cid}"),
+                           ("uploads", f"https://www.youtube.com/feeds/videos.xml?playlist_id=UU{cid[2:]}")):
+            t = time.time()
+            try:
+                vids = parse_youtube(fetch(url))
+                title = vids[0]["source"] if vids else "?"
+                print(f"   ✓ {cid} ({label}) : {len(vids)} vidéos, {title} — {time.time() - t:.1f} s")
+                ok += 1
+                break
+            except urllib.error.HTTPError as e:
+                print(f"   ✗ {cid} ({label}) : HTTP {e.code} {e.reason}")
+            except Exception as e:
+                print(f"   ✗ {cid} ({label}) : {e}")
+    print("\n3. Bilan")
+    if ok:
+        print(f"   {ok}/{min(sample, len(ids))} chaînes lisibles : la lecture YouTube fonctionne.")
+        print(f"   Avec {len(ids)} chaînes, le premier chargement prend environ "
+              f"{max(5, len(ids) // 6)} s dans le tableau de bord.")
+    else:
+        print("   Aucune chaîne lisible. Erreurs 404/429 : YouTube limite temporairement ta")
+        print("   connexion (trop de requêtes) ; réessaie dans une heure. Autre erreur : réseau.")
+
+
+if __name__ == "__main__":
+    import argparse
+    ap = argparse.ArgumentParser(description="Diagnostic de la lecture YouTube.")
+    ap.add_argument("--yt", help="fichier abonnements.csv (Google Takeout)")
+    ap.add_argument("--ytids", default="", help="identifiants de chaînes UC…, séparés par des virgules")
+    ap.add_argument("--sample", type=int, default=5, help="nombre de chaînes à tester")
+    a = ap.parse_args()
+    diagnose(a.yt, a.ytids, a.sample)

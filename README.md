@@ -119,6 +119,9 @@ L'adresse est relue toutes les 10 minutes. Un fichier `.ics` exporté marche aus
   → Toutes les données → seulement « abonnements »). Ou `ytids=UC…,UC…` à la main.
 - `ratio=2` : 2 actualités puis 1 vidéo (0 = tout par date) ; `shorts=1` garde les Shorts ;
   `rss=<adresse>,…` ajoute d'autres flux RSS.
+- Diagnostic YouTube : `python3 feeds.py --yt ~/youtube-abonnements.csv` (fichier,
+  chaînes trouvées, accès aux flux). Le journal du tableau de bord résume aussi chaque
+  mise à jour : `grep "\[fil\]" ~/.cache/desktop-dashboard/dashboard.log`.
 - Un clic ouvre l'article ou la vidéo dans le navigateur. Le fil défile seul et s'arrête
   sous la souris. Mise à jour toutes les 10 minutes.
 

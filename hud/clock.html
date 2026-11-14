@@ -41,6 +41,8 @@
       <span>EN MARCHE</span><b id="uptime">—</b>
       <span>CHARGE</span><b id="load">—</b>
       <span id="bat-label">BATTERIE</span><b id="bat">—</b>
+      <span>IP LOCALE</span><b id="lip">—</b>
+      <span>IP PUBLIQUE</span><b id="pip">—</b>
     </div>
   </section>
 <script>
@@ -104,6 +106,9 @@ async function system() {
     $("host").textContent = s.host;
     $("uptime").textContent = duration(s.uptime);
     $("load").textContent = s.load.join("  ");
+    $("lip").innerHTML = s.local_ip
+      ? `${s.local_ip}${s.iface ? ` <span class="dim">${s.iface}</span>` : ""}` : "hors ligne";
+    $("pip").textContent = s.public_ip || (s.local_ip ? "…" : "hors ligne");
     if (s.battery) {
       const b = s.battery;
       const charging = /charg/i.test(b.status) && !/dis/i.test(b.status);
