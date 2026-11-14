@@ -8,8 +8,8 @@
     --hud: #3ef2ff;
     --hud-dim: rgba(62, 242, 255, .55);
     --hud-faint: rgba(62, 242, 255, .14);
-    --warn: #ffb547;
-    --hot: #ff4d6d;
+    --warn: #ff9830;
+    --hot: #f2495c;
     --panel: rgba(4, 18, 30, .55);
   }
   * { box-sizing: border-box; margin: 0; }
@@ -45,13 +45,26 @@
   canvas { width: 100%; height: clamp(20px, 22vh, 48px); display: block; margin-top: auto; }
   .bar { height: 5px; background: var(--hud-faint); position: relative; }
   .bar > i { position: absolute; inset: 0 auto 0 0; background: var(--hud); box-shadow: 0 0 6px var(--hud); }
-  .warn { color: var(--warn); text-shadow: 0 0 6px rgba(255, 181, 71, .6); }
-  .hot { color: var(--hot); text-shadow: 0 0 6px rgba(255, 77, 109, .7); }
+  .warn { color: var(--warn); text-shadow: 0 0 6px rgba(255, 152, 48, .6); }
+  .hot { color: var(--hot); text-shadow: 0 0 6px rgba(242, 73, 92, .7); }
   .bar > i.warn { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
   .bar > i.hot { background: var(--hot); box-shadow: 0 0 6px var(--hot); }
   .ring { width: clamp(36px, 30vh, 70px); height: clamp(36px, 30vh, 70px); margin: 2px auto 0; }
   .icon { font-size: clamp(16px, 12vh, 26px); text-shadow: none; }
   .offline { opacity: .35; }
+  :root { --down: #5794f2; --up: #73bf69; }
+  .down { color: var(--down); text-shadow: 0 0 6px rgba(87, 148, 242, .6); }
+  .up { color: var(--up); text-shadow: 0 0 6px rgba(115, 191, 105, .6); }
+  .wind { display: flex; align-items: center; gap: 6px; }
+  .wind svg { width: clamp(14px, 9vh, 22px); height: clamp(14px, 9vh, 22px); flex: none;
+              filter: drop-shadow(0 0 3px currentColor); transition: transform .6s; }
+  .cores-badge { font-size: clamp(9px, 6vh, 12px); padding: 0 6px; border: 1px solid var(--hud-dim);
+                 color: var(--hud); letter-spacing: .1em; }
+  .cores { display: flex; align-items: flex-end; gap: 2px; height: clamp(14px, 12vh, 28px); }
+  .cores i { flex: 1; background: var(--hud); box-shadow: 0 0 4px var(--hud); min-height: 1px; opacity: .85;
+             transition: height .4s; }
+  .cores i.warn { background: var(--warn); box-shadow: 0 0 4px var(--warn); }
+  .cores i.hot { background: var(--hot); box-shadow: 0 0 4px var(--hot); }
 </style>
 </head>
 <body>
@@ -59,13 +72,17 @@
     <span class="label">MÉTÉO</span>
     <div class="row"><span class="icon" id="w-icon">·</span><span class="big" id="w-temp">--</span></div>
     <span class="small wrap" id="w-desc">—</span>
+    <div class="small wind" id="w-wind" style="display:none">
+      <svg viewBox="0 0 24 24" id="w-arrow"><path d="M12 2 L18 20 L12 15 L6 20 Z" fill="currentColor"/></svg>
+      <span id="w-wind-text" class="wrap"></span>
+    </div>
     <span class="small" id="w-place"></span>
   </section>
 
   <section class="card">
-    <span class="label">CPU</span>
+    <div class="row"><span class="label">CPU</span><span class="cores-badge" id="cores-badge"></span></div>
     <div class="row"><span class="big" id="cpu">--</span><span id="temp" class="small"></span></div>
-    <div class="bar"><i id="cpu-bar" style="width:0"></i></div>
+    <div class="cores" id="cores"></div>
     <canvas id="cpu-graph"></canvas>
   </section>
 
@@ -82,8 +99,8 @@
 
   <section class="card">
     <span class="label">RÉSEAU</span>
-    <div class="row"><span class="small">▼</span><span class="big" id="down" style="font-size:clamp(12px,10vh,20px)">--</span></div>
-    <div class="row"><span class="small">▲</span><span class="big" id="up" style="font-size:clamp(12px,10vh,20px)">--</span></div>
+    <div class="row down"><span class="small down">▼</span><span class="big down" id="down" style="font-size:clamp(12px,10vh,20px)">--</span></div>
+    <div class="row up"><span class="small up">▲</span><span class="big up" id="up" style="font-size:clamp(12px,10vh,20px)">--</span></div>
     <canvas id="net-graph"></canvas>
   </section>
 
@@ -132,7 +149,8 @@ function sparkline(canvas, series, colors, max) {
     ctx.stroke();
     if (k === 0) {                    // remplissage léger sous la première courbe
       ctx.lineTo(w, h); ctx.lineTo(x0, h); ctx.closePath();
-      ctx.fillStyle = "rgba(62,242,255,.10)"; ctx.shadowBlur = 0; ctx.fill();
+      ctx.fillStyle = colors[0] === "#5794f2" ? "rgba(87,148,242,.12)" : "rgba(62,242,255,.10)";
+      ctx.shadowBlur = 0; ctx.fill();
     }
   });
 }
@@ -143,8 +161,15 @@ function render(s) {
   const cpu = s.cpu.percent;
   $("cpu").textContent = cpu.toFixed(0) + "%";
   $("cpu").className = "big " + level(cpu, 70, 90);
-  $("cpu-bar").style.width = cpu + "%";
-  $("cpu-bar").className = level(cpu, 70, 90);
+  const cores = s.cpu.per_core || [];
+  $("cores-badge").textContent = (s.cpu.cores || cores.length) + " CPU";
+  const box = $("cores");
+  if (box.children.length !== cores.length) box.innerHTML = cores.map(() => "<i></i>").join("");
+  cores.forEach((v, i) => {
+    box.children[i].style.height = Math.max(2, v) + "%";
+    box.children[i].className = level(v, 70, 90);
+    box.children[i].title = `cœur ${i + 1} : ${v.toFixed(0)}%`;
+  });
   if (s.cpu.temp != null) {
     $("temp").textContent = s.cpu.temp.toFixed(0) + "°C";
     $("temp").className = "small " + level(s.cpu.temp, 75, 90);
@@ -161,7 +186,7 @@ function render(s) {
   $("down").textContent = fmtBytes(s.net.down, true);
   $("up").textContent = fmtBytes(s.net.up, true);
   push(hist.down, s.net.down); push(hist.up, s.net.up);
-  sparkline($("net-graph"), [hist.down, hist.up], ["#3ef2ff", "#c77dff"]);
+  sparkline($("net-graph"), [hist.down, hist.up], ["#5794f2", "#73bf69"]);
   // Disques
   $("dread").textContent = fmtBytes(s.disk.read, true);
   $("dwrite").textContent = fmtBytes(s.disk.write, true);
@@ -218,12 +243,19 @@ async function weather() {
       return;
     }
     const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${where.lat}` +
-                          `&longitude=${where.lon}&current=temperature_2m,weather_code,wind_speed_10m`);
+                          `&longitude=${where.lon}&current=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m`);
     const c = (await r.json()).current;
     const [icon, desc] = WEATHER[c.weather_code] || ["·", "—"];
     $("w-icon").textContent = icon;
     $("w-temp").textContent = Math.round(c.temperature_2m) + "°C";
-    $("w-desc").textContent = desc + " · " + Math.round(c.wind_speed_10m) + " km/h";
+    $("w-desc").textContent = desc;
+    // Flèche : sens où va le vent (la direction météo indique d'où il vient).
+    const dirs = ["N", "NE", "E", "SE", "S", "SO", "O", "NO"];
+    const from = dirs[Math.round(c.wind_direction_10m / 45) % 8];
+    $("w-arrow").style.transform = `rotate(${(c.wind_direction_10m + 180) % 360}deg)`;
+    $("w-wind-text").innerHTML = `<b>${Math.round(c.wind_speed_10m)} km/h</b> ${from}` +
+      (c.wind_gusts_10m > c.wind_speed_10m + 5 ? `<br>rafales ${Math.round(c.wind_gusts_10m)}` : "");
+    $("w-wind").style.display = "";
     $("w-place").textContent = where.name;
   } catch (e) {
     // Souvent au démarrage, avant que le réseau soit prêt : on réessaie dans 30 s.

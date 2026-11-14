@@ -33,6 +33,13 @@ class ParseSpec(unittest.TestCase):
         self.assertEqual(layer.user, "nico")
         self.assertEqual(layer.w, "50%")
 
+    def test_css_option(self):
+        self.assertEqual(L.parse_spec("https://a.example/d/x?kiosk|css=grafana").css, "grafana")
+        self.assertEqual(L.parse_spec("https://a.example|css=~/my.css").css, "~/my.css")
+        self.assertIsNone(L.parse_spec("https://a.example").css)
+        with self.assertRaises(L.LayerError):
+            L.parse_spec("https://a.example|css=")
+
     def test_bool_values(self):
         self.assertFalse(L.parse_spec("http://a.example|transparent=0").transparent)
         self.assertTrue(L.parse_spec("http://a.example|transparent=oui").transparent)

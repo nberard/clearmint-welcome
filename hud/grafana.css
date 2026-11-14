@@ -1,0 +1,30 @@
+/* Thème « grafana » : accorde Grafana aux panneaux HUD (fond bleu nuit, cadres cyan).
+   À utiliser avec ?kiosk dans l'adresse du tableau de bord, pour masquer l'en-tête.
+   Les noms de classes de Grafana changent d'une version à l'autre : ce thème vise
+   Grafana 10 et 11 et peut demander des retouches. */
+
+html, body, .main-view, .page-wrapper, .scrollbar-view {
+  background: radial-gradient(ellipse 80% 60% at 60% 40%, #08202c 0%, #040b12 70%) fixed !important;
+}
+
+/* Panneaux : fond sombre translucide, cadre cyan discret, coins droits. */
+section[data-testid^="data-testid Panel header"],
+.react-grid-item > div > section {
+  background: rgba(6, 22, 36, .78) !important;
+  border: 1px solid rgba(62, 242, 255, .28) !important;
+  border-radius: 0 !important;
+  box-shadow: 0 0 12px rgba(62, 242, 255, .10), inset 0 0 18px rgba(62, 242, 255, .05) !important;
+}
+
+/* Titres des panneaux en style HUD. */
+section[data-testid^="data-testid Panel header"] h2 {
+  font-family: "DejaVu Sans Mono", "Ubuntu Mono", monospace !important;
+  font-size: 11px !important;
+  letter-spacing: .2em !important;
+  text-transform: uppercase !important;
+  color: rgba(62, 242, 255, .7) !important;
+  text-shadow: 0 0 6px rgba(62, 242, 255, .5);
+}
+
+/* Lignes de grille des graphiques plus discrètes. */
+.u-grid line, .u-axis line { stroke: rgba(62, 242, 255, .08) !important; }

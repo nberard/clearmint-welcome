@@ -3,9 +3,9 @@
   --hud: #3ef2ff;
   --hud-dim: rgba(62, 242, 255, .55);
   --hud-faint: rgba(62, 242, 255, .14);
-  --accent: #c77dff;
-  --warn: #ffb547;
-  --hot: #ff4d6d;
+  --accent: #b877d9;
+  --warn: #ff9830;
+  --hot: #f2495c;
   --panel: rgba(4, 18, 30, .55);
 }
 * { box-sizing: border-box; margin: 0; }
@@ -31,8 +31,8 @@ body {
 }
 .label { font-size: 11px; letter-spacing: .2em; color: var(--hud-dim); }
 .dim { color: var(--hud-dim); }
-.warn { color: var(--warn); text-shadow: 0 0 6px rgba(255, 181, 71, .6); }
-.hot { color: var(--hot); text-shadow: 0 0 6px rgba(255, 77, 109, .7); }
+.warn { color: var(--warn); text-shadow: 0 0 6px rgba(255, 152, 48, .6); }
+.hot { color: var(--hot); text-shadow: 0 0 6px rgba(242, 73, 92, .7); }
 .bar { height: 4px; background: var(--hud-faint); position: relative; }
 .bar > i { position: absolute; inset: 0 auto 0 0; background: var(--hud); box-shadow: 0 0 6px var(--hud); }
 .bar > i.accent { background: var(--accent); box-shadow: 0 0 6px var(--accent); }

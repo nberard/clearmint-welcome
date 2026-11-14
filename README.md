@@ -51,6 +51,7 @@ noms (voir `layers.example.json`).
 | `through` | les clics traversent le calque vers ceux du dessous | non |
 | `zoom` | zoom de la page | `1` |
 | `refresh` | recharge la page toutes les N secondes | `0` (jamais) |
+| `css` | style ajouté à la page : thème intégré (`grafana`) ou fichier `.css` | aucun |
 
 - Un calque n'est vraiment transparent que si **la page elle-même** a un fond
   transparent (`body { background: transparent }`). Les sites classiques ont un fond
@@ -93,6 +94,21 @@ sauf la météo (Open-Meteo, gratuit, sans clé).
 
 Pour l'essayer seul dans un navigateur : `python3 stats.py`, puis
 http://127.0.0.1:8765/stats.html
+
+## Grafana
+
+- **Masquer l'en-tête** (menu, sélecteur de dates…) : ajoute `kiosk` à l'adresse du
+  tableau de bord, ex. `https://nico@health.touplitoui.me/d/<uid>/google-health?orgId=1&kiosk`
+  (copie l'adresse depuis ton navigateur).
+- **Accorder les couleurs** aux panneaux HUD : `css=grafana` (fond bleu nuit, cadres
+  cyan, titres HUD). Les noms internes de Grafana changent selon les versions : le
+  thème peut demander des retouches.
+- **Retirer un panneau** (ex. « Poids ») : le plus propre est de le supprimer ou de le
+  déplacer tout en bas dans Grafana. Sinon, dans un fichier `.css` à toi :
+  ```css
+  .react-grid-item:has(section[data-testid="data-testid Panel header Poids"]) { display: none !important; }
+  ```
+  (la place du panneau reste vide).
 
 ## Connexion
 

@@ -301,6 +301,32 @@ def watch_network():
     monitor.connect("network-changed", changed)
 
 
+HUD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hud")
+
+
+def load_css(value):
+    """Thème intégré (hud/<nom>.css) ou chemin d'un fichier .css."""
+    path = os.path.expanduser(value)
+    if not os.path.isfile(path):
+        path = os.path.join(HUD_DIR, f"{value}.css")
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        sys.exit(f"Erreur : css={value} introuvable (ni fichier, ni thème hud/{value}.css)")
+
+
+def user_style(css, url=None):
+    """Feuille de style « utilisateur » : elle passe devant celle du site (avec !important).
+    Avec url, elle ne s'applique qu'aux pages de ce site (utile dans les cadres)."""
+    allow = None
+    if url:
+        parts = urlsplit(url)
+        allow = [f"{parts.scheme}://{parts.netloc}/*"]
+    return WebKit2.UserStyleSheet(css, WebKit2.UserContentInjectedFrames.ALL_FRAMES,
+                                  WebKit2.UserStyleLevel.USER, allow, None)
+
+
 def connect_view(view, auth, name):
     view.connect("authenticate", auth.on_authenticate)
     view.connect("load-changed", on_load_changed, name)
@@ -315,6 +341,8 @@ def make_view(layer, context, auth, name):
             f"html {{ opacity: {layer.opacity} !important; }}",
             WebKit2.UserContentInjectedFrames.TOP_FRAME,
             WebKit2.UserStyleLevel.USER, None, None))
+    if layer.css:
+        content.add_style_sheet(user_style(load_css(layer.css)))
     view = WebKit2.WebView(web_context=context, user_content_manager=content)
     if layer.zoom != 1:
         view.set_zoom_level(layer.zoom)
@@ -332,7 +360,11 @@ def make_composer(layers, context, auth, name):
     Plusieurs vues WebKit transparentes empilées dans GTK laissent des zones noires
     quand elles se redessinent ; dans une seule page, le navigateur gère tout.
     """
-    view = WebKit2.WebView(web_context=context)
+    content = WebKit2.UserContentManager()
+    for layer in layers:
+        if layer.css:  # appliqué seulement au site de ce calque, dans son cadre
+            content.add_style_sheet(user_style(load_css(layer.css), layer.url))
+    view = WebKit2.WebView(web_context=context, user_content_manager=content)
     view.set_background_color(Gdk.RGBA(0, 0, 0, 0))
     connect_view(view, auth, name)
     view.load_html(L.composer_html(layers), "http://127.0.0.1/")

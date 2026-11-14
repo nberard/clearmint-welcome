@@ -10,10 +10,19 @@
   .time small { font-size: .35em; color: var(--hud-dim); margin-left: .15em; }
   .left { display: flex; flex-direction: column; gap: 1vh; }
   .date { font-size: clamp(12px, 9vh, 26px); text-transform: capitalize; }
-  .hello { font-size: clamp(10px, 6vh, 16px); color: var(--accent); text-shadow: 0 0 6px rgba(199,125,255,.6); }
+  .hello { font-size: clamp(10px, 6vh, 16px); color: var(--accent); text-shadow: 0 0 6px rgba(184,119,217,.6); }
   .info { display: grid; grid-template-columns: auto 1fr; gap: .6vh 1.2em; font-size: clamp(10px, 6vh, 14px);
-          margin-left: auto; align-self: center; }
+          align-self: center; }
   .info span:nth-child(odd) { color: var(--hud-dim); letter-spacing: .15em; font-size: .8em; align-self: center; }
+  .cal { margin: 0 auto; display: grid; grid-template-columns: repeat(7, 1fr); gap: .3vh .6vw;
+         font-size: clamp(9px, 5.5vh, 13px); text-align: center; align-self: center; }
+  .cal .title { grid-column: 1 / -1; letter-spacing: .2em; color: var(--hud-dim); font-size: .85em;
+                text-transform: uppercase; margin-bottom: .4vh; }
+  .cal .dow { color: var(--hud-dim); font-size: .8em; }
+  .cal span { padding: .15em .35em; }
+  .cal .other { opacity: .25; }
+  .cal .we { color: var(--accent); text-shadow: 0 0 6px rgba(184,119,217,.5); }
+  .cal .today { background: var(--hud); color: #03070c; text-shadow: none; box-shadow: 0 0 10px var(--hud); }
   .battery { display: inline-flex; align-items: center; gap: .5em; }
   .battery svg { height: 1.3em; width: auto; overflow: visible; filter: drop-shadow(0 0 3px currentColor); }
 </style>
@@ -25,6 +34,7 @@
       <div class="time" id="time">--:--</div>
       <div class="date" id="date"></div>
     </div>
+    <div class="cal" id="cal"></div>
     <div class="info">
       <span>SYSTÈME</span><b id="distro">—</b>
       <span>MACHINE</span><b id="host">—</b>
@@ -47,6 +57,25 @@ function clock() {
   $("time").innerHTML = `${pad(d.getHours())}:${pad(d.getMinutes())}<small>${pad(d.getSeconds())}</small>`;
   $("date").textContent = d.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   $("hello").textContent = greeting(d.getHours());
+  calendar(d);
+}
+// Calendrier du mois, semaine commençant le lundi, aujourd'hui en surbrillance.
+let calDay = null;
+function calendar(d) {
+  if (calDay === d.toDateString()) return;
+  calDay = d.toDateString();
+  const y = d.getFullYear(), m = d.getMonth();
+  const first = new Date(y, m, 1), start = (first.getDay() + 6) % 7;
+  const cells = [`<span class="title">${d.toLocaleDateString("fr-FR", { month: "long", year: "numeric" })}</span>`];
+  for (const l of ["L", "M", "M", "J", "V", "S", "D"]) cells.push(`<span class="dow">${l}</span>`);
+  for (let i = 0; i < 42; i++) {
+    const day = new Date(y, m, 1 - start + i);
+    if (i >= 35 && day.getMonth() !== m) break;      // pas de 6e ligne vide
+    const cls = [day.getMonth() !== m ? "other" : "", i % 7 >= 5 ? "we" : "",
+                 day.toDateString() === calDay ? "today" : ""].join(" ");
+    cells.push(`<span class="${cls}">${day.getDate()}</span>`);
+  }
+  $("cal").innerHTML = cells.join("");
 }
 function duration(s) {
   const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);

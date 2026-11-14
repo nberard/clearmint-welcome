@@ -17,6 +17,7 @@ Options :
   through       les clics traversent ce calque vers ceux du dessous (défaut : non)
   zoom          zoom de la page (défaut : 1)
   refresh       recharge la page toutes les N secondes (défaut : 0 = jamais)
+  css           style ajouté à la page : thème intégré (« grafana ») ou fichier .css
 """
 import json
 from dataclasses import dataclass, fields
@@ -44,6 +45,7 @@ class Layer:
     through: bool = False
     zoom: float = 1.0
     refresh: int = 0
+    css: Optional[str] = None  # feuille de style ajoutée à la page (thème intégré ou fichier)
 
     @property
     def host(self):
@@ -127,6 +129,10 @@ def _apply(layer, key, value):
             raise LayerError(f"refresh={value!r} : nombre de secondes attendu")
     elif key == "user":
         layer.user = str(value)
+    elif key == "css":
+        if not str(value).strip():
+            raise LayerError("css= : nom de thème (ex. grafana) ou chemin d'un fichier .css")
+        layer.css = str(value).strip()
     else:
         known = ", ".join(f.name for f in fields(Layer) if f.name != "url")
         raise LayerError(f"option inconnue : {key!r} (options : {known})")

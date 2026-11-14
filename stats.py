@@ -40,6 +40,18 @@ def cpu_times():
     return 0, 0
 
 
+def core_times():
+    """[(temps actif, temps total), ...] pour chaque cœur."""
+    out = []
+    for line in _read("/proc/stat").splitlines():
+        if line.startswith("cpu") and line[3:4].isdigit():
+            v = [int(x) for x in line.split()[1:]]
+            idle = v[3] + (v[4] if len(v) > 4 else 0)
+            total = sum(v[:8])
+            out.append((total - idle, total))
+    return out
+
+
 def cpu_temp():
     """Température du processeur en °C, ou None si aucun capteur n'est trouvé."""
     for hw in sorted(glob.glob("/sys/class/hwmon/hwmon*")):
@@ -190,16 +202,21 @@ class Sampler(threading.Thread):
 
     def run(self):
         prev_cpu, prev_net, prev_disk, prev_t = cpu_times(), net_bytes(), disk_bytes(), time.time()
+        prev_cores = core_times()
         prev_procs, prev_procs_t, procs, tick = process_times(), time.time(), {}, 0
         while True:
             time.sleep(self.interval)
             cpu, net, disk, now = cpu_times(), net_bytes(), disk_bytes(), time.time()
             dt = max(now - prev_t, 1e-3)
             busy, total = cpu[0] - prev_cpu[0], cpu[1] - prev_cpu[1]
+            cores = core_times()
+            per_core = [round(100 * (c[0] - p[0]) / (c[1] - p[1]), 1) if c[1] > p[1] else 0
+                        for c, p in zip(cores, prev_cores)]
+            prev_cores = cores
             sample = {
                 "time": now,
                 "cpu": {"percent": round(100 * busy / total, 1) if total > 0 else 0,
-                        "temp": cpu_temp(), "cores": os.cpu_count()},
+                        "temp": cpu_temp(), "cores": os.cpu_count(), "per_core": per_core},
                 "mem": memory(),
                 "net": {"down": max(0, (net[0] - prev_net[0]) / dt),
                         "up": max(0, (net[1] - prev_net[1]) / dt)},
