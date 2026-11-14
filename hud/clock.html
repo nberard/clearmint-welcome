@@ -5,21 +5,25 @@
 <title>Clock</title>
 <link rel="stylesheet" href="hud.css">
 <style>
-  .card { height: 100%; display: flex; align-items: center; gap: 4vw; }
+  .card { height: 100%; display: flex; align-items: center; gap: 2vw; }
   .time { font-size: clamp(36px, 42vh, 150px); font-weight: bold; line-height: 1; letter-spacing: .02em; }
   .time small { font-size: .35em; color: var(--hud-dim); margin-left: .15em; }
   .left { display: flex; flex-direction: column; gap: 1vh; }
   .date { font-size: clamp(12px, 9vh, 26px); text-transform: capitalize; }
   .hello { font-size: clamp(10px, 6vh, 16px); color: var(--accent); text-shadow: 0 0 6px rgba(184,119,217,.6); }
-  .info { display: grid; grid-template-columns: auto 1fr; gap: .6vh 1.2em; font-size: clamp(10px, 6vh, 14px);
-          align-self: center; }
-  .info span:nth-child(odd) { color: var(--hud-dim); letter-spacing: .15em; font-size: .8em; align-self: center; }
-  .cal { margin: 0 auto; display: grid; grid-template-columns: repeat(7, 1fr); gap: .3vh .6vw;
+  /* Bloc système : prend toute la place restante, valeurs sur une ligne. */
+  .info { flex: 1; min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr);
+          gap: .5vh 1em; font-size: clamp(11px, 7.5vh, 17px); align-self: center;
+          padding-left: 1.2vw; border-left: 1px solid var(--hud-faint); }
+  .info span:nth-child(odd) { color: var(--hud-dim); letter-spacing: .15em; font-size: .72em; align-self: center;
+                              white-space: nowrap; }
+  .info b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cal { margin: 0; flex: none; display: grid; grid-template-columns: repeat(7, 1fr); gap: .15vh .3vw;
          font-size: clamp(9px, 5.5vh, 13px); text-align: center; align-self: center; }
   .cal .title { grid-column: 1 / -1; letter-spacing: .2em; color: var(--hud-dim); font-size: .85em;
-                text-transform: uppercase; margin-bottom: .4vh; }
+                text-transform: uppercase; margin-bottom: .2vh; }
   .cal .dow { color: var(--hud-dim); font-size: .8em; }
-  .cal span { padding: .15em .35em; }
+  .cal span { padding: .08em .2em; }
   .cal .other { opacity: .25; }
   .cal .we { color: var(--accent); text-shadow: 0 0 6px rgba(184,119,217,.5); }
   .cal .today { background: var(--hud); color: #03070c; text-shadow: none; box-shadow: 0 0 10px var(--hud); }
