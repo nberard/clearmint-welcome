@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Agenda</title>
+<link rel="stylesheet" href="hud.css">
+<style>
+  .card { height: 100%; display: flex; flex-direction: column; gap: 8px; }
+  .head { display: flex; justify-content: space-between; align-items: baseline; }
+  .week { flex: 1; display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; min-height: 0; }
+  .day { display: flex; flex-direction: column; gap: 4px; min-width: 0; overflow: hidden;
+         border-top: 1px solid var(--hud-faint); padding-top: 4px; }
+  .day h3 { font-size: clamp(10px, 2.6vh, 14px); font-weight: normal; letter-spacing: .12em;
+            display: flex; align-items: baseline; gap: .4em; color: var(--hud-dim); }
+  .day h3 b { color: var(--hud); font-size: 1.25em; }
+  .day.today { border-top: 2px solid var(--hud); background: rgba(62, 242, 255, .05); }
+  .day.today h3, .day.today h3 b { color: var(--hud); }
+  .day.past { opacity: .45; }
+  .day.weekend h3 { color: var(--accent); }
+  .ev { font-size: clamp(9px, 2.2vh, 13px); line-height: 1.25; padding: 3px 5px;
+        border-left: 2px solid var(--hud-dim); background: rgba(62, 242, 255, .06); }
+  .ev .t { color: var(--hud-dim); margin-right: .4em; }
+  .ev .loc { display: block; color: var(--hud-dim); font-size: .85em; overflow: hidden;
+             text-overflow: ellipsis; white-space: nowrap; }
+  .ev.allday { border-left-color: var(--accent); background: rgba(184, 119, 217, .14); }
+  .ev.now { border-left-color: #73bf69; background: rgba(115, 191, 105, .16); }
+  .ev.done { opacity: .45; }
+  .empty { color: var(--hud-faint); font-size: 12px; text-align: center; margin-top: 6px; }
+  .msg { color: var(--warn); font-size: 12px; }
+</style>
+</head>
+<body>
+  <section class="card">
+    <div class="head"><span class="label" id="title">AGENDA</span><span class="label" id="status"></span></div>
+    <div class="week" id="week"></div>
+  </section>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const pad = (n) => String(n).padStart(2, "0");
+const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+let data = null;
+
+function weekNumber(d) {                       // numéro de semaine ISO
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7));
+  return Math.ceil(((t - Date.UTC(t.getUTCFullYear(), 0, 1)) / 864e5 + 1) / 7);
+}
+
+function render() {
+  if (!data) return;
+  if (data.error && !data.events.length) {
+    $("week").innerHTML = `<span class="msg" style="grid-column:1/-1">${esc(data.error)}</span>`;
+    return;
+  }
+  const monday = new Date(data.start), now = new Date(), today = ymd(now);
+  const days = [...Array(7)].map((_, i) => new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i));
+  const fmt = (d, o) => d.toLocaleDateString("fr-FR", o);
+  $("title").textContent = `SEMAINE ${weekNumber(monday)} · ${fmt(days[0], { day: "numeric" })} – ` +
+                           `${fmt(days[6], { day: "numeric", month: "short" })}`.toUpperCase();
+  $("status").textContent = data.stale ? "hors ligne" : "";
+
+  $("week").innerHTML = days.map((d, i) => {
+    const key = ymd(d);
+    const evs = data.events.filter((e) => e.all_day
+      ? e.start <= key && key < e.end                    // sur plusieurs jours
+      : e.start.slice(0, 10) === key);
+    const cls = ["day", key === today ? "today" : "", key < today ? "past" : "", i >= 5 ? "weekend" : ""].join(" ");
+    const items = evs.map((e) => {
+      if (e.all_day) return `<div class="ev allday">${esc(e.title)}</div>`;
+      const s = new Date(e.start), en = new Date(e.end);
+      const state = now >= s && now < en ? "now" : now >= en ? "done" : "";
+      const loc = e.location ? `<span class="loc">${esc(e.location.split(",")[0])}</span>` : "";
+      return `<div class="ev ${state}"><span class="t">${pad(s.getHours())}:${pad(s.getMinutes())}</span>` +
+             `${esc(e.title)}${loc}</div>`;
+    }).join("") || '<span class="empty">—</span>';
+    return `<div class="${cls}"><h3>${fmt(d, { weekday: "short" }).replace(".", "").toUpperCase()}` +
+           `<b>${d.getDate()}</b></h3>${items}</div>`;
+  }).join("");
+}
+
+async function load() {
+  try {
+    data = await (await fetch("/api/calendar" + location.search, { cache: "no-store" })).json();
+    document.body.classList.remove("offline");
+  } catch (e) {
+    document.body.classList.add("offline");
+  }
+  render();
+}
+load();
+setInterval(load, 5 * 60 * 1000);
+setInterval(render, 60 * 1000);   // « en cours » / « terminé » au fil de la journée
+</script>
+</body>
+</html>

@@ -10,9 +10,14 @@ import glob
 import json
 import os
 import shutil
+import subprocess
 import threading
 import time
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+import calendar_ics
+import feeds
 
 HUD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hud")
 MOUNTS = ("/", "/home")
@@ -242,13 +247,87 @@ class Sampler(threading.Thread):
 
 # --------------------------------------------------------------------------- serveur
 
+CACHE = {}           # clé -> (heure, données)
+CACHE_TTL = 600      # 10 min
+OPENABLE = set()     # adresses du fil qu'on accepte d'ouvrir dans le navigateur
+CACHE_LOCK = threading.Lock()
+
+
+def cached(key, compute, ttl=CACHE_TTL):
+    """Résultat mis en cache ; en cas d'erreur, on renvoie l'ancien résultat s'il existe."""
+    with CACHE_LOCK:
+        hit = CACHE.get(key)
+    if hit and time.time() - hit[0] < ttl:
+        return hit[1]
+    try:
+        data = compute()
+    except Exception as e:
+        if hit:
+            return {**hit[1], "stale": True, "error": str(e)}
+        return {"error": str(e)}
+    with CACHE_LOCK:
+        CACHE[key] = (time.time(), data)
+    return data
+
+
+def api_calendar(q):
+    ics = q.get("ics", [""])[0]
+    if not ics:
+        return {"error": "adresse iCal manquante : calendar?ics=…", "events": []}
+    weeks = max(1, min(4, int(q.get("weeks", ["1"])[0] or 1)))
+    text = cached(("ics", ics), lambda: {"text": feeds.fetch(ics, timeout=15)})
+    if "text" not in text:
+        return {"error": text.get("error"), "events": []}
+    start, end = calendar_ics.week_bounds(weeks=weeks)
+    out = {"start": start.isoformat(), "end": end.isoformat(),
+           "events": calendar_ics.events_between(text["text"], start, end)}
+    if text.get("stale"):
+        out["stale"] = True
+    return out
+
+
+def api_feed(q):
+    def get(name, default=""):
+        return q.get(name, [default])[0]
+
+    key = ("feed", tuple(sorted((k, tuple(v)) for k, v in q.items())))
+
+    def compute():
+        sources = feeds.build_sources(
+            hl=get("hl", "fr"), gl=get("gl", "FR"), q=get("q"), news=get("news", "1") != "0",
+            yt_csv=get("yt") or None, yt_ids=get("ytids"), rss=get("rss"),
+            shorts=get("shorts", "0") == "1")
+        items, errors = feeds.merged(sources, limit=int(get("limit", "40") or 40),
+                                     ratio=int(get("ratio", "2") or 0))
+        return {"items": items, "errors": errors[:5], "sources": len(sources)}
+
+    data = cached(key, compute)
+    for item in data.get("items", []):
+        OPENABLE.add(item["url"])
+    return data
+
+
+def api_open(q):
+    url = q.get("url", [""])[0]
+    if url not in OPENABLE or not url.startswith(("http://", "https://")):
+        return {"ok": False}
+    subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True)
+    return {"ok": True}
+
+
 def make_handler(sampler):
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
-            path = self.path.split("?", 1)[0]
+            path, _, query = self.path.partition("?")
+            q = urllib.parse.parse_qs(query)
+            apis = {"/api/calendar": api_calendar, "/api/feed": api_feed, "/api/open": api_open}
             if path == "/api/stats":
                 body = json.dumps(sampler.get()).encode()
                 ctype = "application/json"
+            elif path in apis:
+                body = json.dumps(apis[path](q), ensure_ascii=False).encode()
+                ctype = "application/json; charset=utf-8"
             else:
                 name = os.path.basename(path) or "stats.html"
                 file = os.path.join(HUD_DIR, name)

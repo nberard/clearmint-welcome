@@ -63,6 +63,8 @@ BUILTIN_PAGES = {
     "clock": "/clock.html",   # heure, date, infos système
     "procs": "/procs.html",   # programmes les plus gourmands
     "grid": "/grid.html",     # fond animé style HUD (opaque, à mettre en premier)
+    "calendar": "/calendar.html",  # semaine de l'agenda (adresse iCal)
+    "news": "/news.html",     # Google News + vidéos des abonnements YouTube
 }
 
 
@@ -175,7 +177,7 @@ def load_config(path):
     return [from_dict(d) for d in items]
 
 
-TRANSPARENT_BUILTINS = {"/stats.html", "/clock.html", "/procs.html"}
+TRANSPARENT_BUILTINS = {"/stats.html", "/clock.html", "/procs.html", "/calendar.html", "/news.html"}
 
 
 def finalize(layers):

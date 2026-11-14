@@ -70,6 +70,8 @@ noms (voir `layers.example.json`).
 | `clock` | heure, date, salutation (`clock?name=Nico`), infos système, batterie |
 | `procs` | programmes les plus gourmands en CPU et en mémoire |
 | `grid` | fond animé (opaque) : à mettre en premier |
+| `calendar` | semaine de l'agenda : `calendar?ics=<adresse iCal>` (voir plus bas) |
+| `news` | Google News + vidéos de tes abonnements YouTube (voir plus bas) |
 
 Exemple : fond animé, Grafana à droite, panneaux à gauche :
 
@@ -94,6 +96,25 @@ sauf la météo (Open-Meteo, gratuit, sans clé).
 
 Pour l'essayer seul dans un navigateur : `python3 stats.py`, puis
 http://127.0.0.1:8765/stats.html
+
+### Agenda : `calendar`
+
+Dans Google Agenda (navigateur) : **⚙ Paramètres → ton agenda → Intégrer l'agenda →
+Adresse secrète au format iCal**. Copie-la dans `calendar?ics=…` (dans `layers.json`,
+pas besoin d'encoder l'adresse). Elle donne accès à ton agenda : garde-la pour toi
+(`layers.json` n'est pas envoyé sur GitHub). `calendar?ics=…&weeks=2` affiche 2 semaines.
+
+### Fil d'actualités : `news`
+
+- Google News, édition française par défaut. Options : `hl=fr&gl=FR` (langue, pays),
+  `q=Nîmes,Occitanie` (recherches à la place de la une), `news=0` (pas d'actualités).
+- YouTube : `yt=~/abonnements.csv`, le fichier de tes abonnements exporté avec
+  **Google Takeout** (takeout.google.com → décocher tout → « YouTube et YouTube Music »
+  → Toutes les données → seulement « abonnements »). Ou `ytids=UC…,UC…` à la main.
+- `ratio=2` : 2 actualités puis 1 vidéo (0 = tout par date) ; `shorts=1` garde les Shorts ;
+  `rss=<adresse>,…` ajoute d'autres flux RSS.
+- Un clic ouvre l'article ou la vidéo dans le navigateur. Le fil défile seul et s'arrête
+  sous la souris. Mise à jour toutes les 10 minutes.
 
 ## Grafana
 

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Fil</title>
+<link rel="stylesheet" href="hud.css">
+<style>
+  .card { height: 100%; display: flex; flex-direction: column; gap: 8px; }
+  .head { display: flex; justify-content: space-between; align-items: baseline; }
+  .list { flex: 1; overflow: hidden; position: relative;
+          mask-image: linear-gradient(to bottom, black 92%, transparent);
+          -webkit-mask-image: linear-gradient(to bottom, black 92%, transparent); }
+  .items { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 8px 14px; }
+  .item { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; padding: 4px;
+          border-left: 2px solid transparent; transition: background .2s; }
+  .item:hover { background: rgba(62, 242, 255, .08); border-left-color: var(--hud); }
+  .thumb { width: clamp(64px, 14vh, 112px); aspect-ratio: 16 / 9; object-fit: cover; flex: none;
+           border: 1px solid rgba(242, 73, 92, .5); }
+  .txt { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .title { font-size: clamp(10px, 2.4vh, 14px); line-height: 1.3; color: #d8f6ff; text-shadow: none;
+           display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .meta { font-size: clamp(9px, 1.9vh, 11px); color: var(--hud-dim); white-space: nowrap;
+          overflow: hidden; text-overflow: ellipsis; }
+  .badge { display: inline-block; font-size: .85em; padding: 0 4px; margin-right: 6px; letter-spacing: .1em;
+           text-shadow: none; color: #03070c; }
+  .badge.news { background: #5794f2; }
+  .badge.youtube { background: #f2495c; }
+  .msg { color: var(--warn); font-size: 12px; }
+</style>
+</head>
+<body>
+  <section class="card">
+    <div class="head"><span class="label">ACTUALITÉS · VIDÉOS</span><span class="label" id="status"></span></div>
+    <div class="list" id="list"><div class="items" id="items"><span class="msg">chargement…</span></div></div>
+  </section>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+function ago(iso) {
+  if (!iso) return "";
+  const m = Math.round((Date.now() - new Date(iso)) / 60000);
+  if (m < 60) return `il y a ${Math.max(1, m)} min`;
+  if (m < 1440) return `il y a ${Math.round(m / 60)} h`;
+  return `il y a ${Math.round(m / 1440)} j`;
+}
+
+function render(data) {
+  if (!data.items || !data.items.length) {
+    $("items").innerHTML = `<span class="msg">${esc(data.error || (data.errors || [])[0] || "aucun élément")}</span>`;
+    return;
+  }
+  $("status").textContent = (data.stale ? "hors ligne · " : "") + data.items.length + " éléments";
+  $("items").innerHTML = data.items.map((it) => {
+    const thumb = it.thumb ? `<img class="thumb" src="${esc(it.thumb)}" loading="lazy" alt="">` : "";
+    const badge = `<span class="badge ${it.kind}">${it.kind === "youtube" ? "YT" : "INFO"}</span>`;
+    return `<div class="item" data-url="${esc(it.url)}">${thumb}<div class="txt">` +
+           `<span class="title">${esc(it.title)}</span>` +
+           `<span class="meta">${badge}${esc(it.source)} · ${ago(it.date)}</span></div></div>`;
+  }).join("");
+}
+
+// Un clic ouvre l'article ou la vidéo dans le navigateur (pas dans le fond d'écran).
+$("items").addEventListener("click", (e) => {
+  const it = e.target.closest(".item");
+  if (it) fetch("/api/open?url=" + encodeURIComponent(it.dataset.url));
+});
+
+// Défilement lent et continu ; il s'arrête quand la souris est dessus.
+let hover = false;
+$("list").addEventListener("mouseenter", () => { hover = true; });
+$("list").addEventListener("mouseleave", () => { hover = false; });
+setInterval(() => {
+  const l = $("list");
+  if (hover || l.scrollHeight <= l.clientHeight) return;
+  l.scrollTop = l.scrollTop + l.clientHeight >= l.scrollHeight - 1 ? 0 : l.scrollTop + 1;
+}, 60);
+
+async function load() {
+  try {
+    render(await (await fetch("/api/feed" + location.search, { cache: "no-store" })).json());
+    document.body.classList.remove("offline");
+  } catch (e) {
+    document.body.classList.add("offline");
+    setTimeout(load, 30 * 1000);
+  }
+}
+load();
+setInterval(load, 10 * 60 * 1000);
+</script>
+</body>
+</html>
