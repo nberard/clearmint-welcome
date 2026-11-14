@@ -19,6 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import calendar_ics
 import feeds
+import gcal
 
 HUD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hud")
 MOUNTS = ("/", "/home")
@@ -319,8 +320,9 @@ def api_calendar(q):
     toutes les 10 min) ou fichiers .ics locaux. Chaque événement garde le numéro de son
     agenda (« cal ») pour la couleur."""
     sources = [v.strip() for vals in q.get("ics", []) for v in vals.split(",") if v.strip()]
-    if not sources:
-        return {"error": "adresse iCal manquante : calendar?ics=…", "events": []}
+    use_google = q.get("google", ["0"])[0] not in ("0", "")
+    if not sources and not use_google:
+        return {"error": "agenda manquant : calendar?google=1 ou calendar?ics=…", "events": []}
     weeks = max(1, min(4, int(q.get("weeks", ["1"])[0] or 1)))
     start, end = calendar_ics.week_bounds(weeks=weeks, from_today=q.get("from", [""])[0] == "today")
     out = {"start": start.isoformat(), "end": end.isoformat(), "events": [], "errors": []}
@@ -335,6 +337,21 @@ def api_calendar(q):
                         lambda t=text["text"]: {"events": calendar_ics.events_between(t, start, end)})
         for ev in events.get("events", []):
             out["events"].append({**ev, "cal": i})
+    if use_google:
+        # API Google : relue toutes les 2 minutes (quasi temps réel), tâches comprises.
+        tasks = q.get("tasks", ["1"])[0] != "0"
+
+        def google_week():
+            evs, errs = gcal.events_between(start, end, with_tasks=tasks)
+            return {"events": evs, "errors": errs}
+
+        g = cached(("google", start.isoformat(), weeks, tasks), google_week, ttl=120)
+        out["events"] += g.get("events", [])
+        out["errors"] += g.get("errors", [])
+        if g.get("error"):
+            out["errors"].append(f"Google : {g['error']}")
+        if g.get("stale"):
+            out["stale"] = True
     out["events"].sort(key=lambda e: (e["start"][:10], not e["all_day"], e["start"]))
     if out["errors"] and not out["events"]:
         out["error"] = out["errors"][0]

@@ -53,6 +53,11 @@ const pad = (n) => String(n).padStart(2, "0");
 const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 let data = null;
 
+function rgba(hex, a) {                      // "#039be5" -> "rgba(3,155,229,a)"
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${n >> 16 & 255}, ${n >> 8 & 255}, ${n & 255}, ${a})`;
+}
+
 function weekNumber(d) {                       // numéro de semaine ISO
   const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
   t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7));
@@ -82,12 +87,17 @@ function render() {
     const cls = ["day", key === today ? "today" : "", key < today ? "past" : "", [0, 6].includes(d.getDay()) ? "weekend" : ""].join(" ");
     const items = evs.map((e) => {
       const cal = e.cal ? ` c${e.cal % 4}` : "";
-      if (e.all_day) return `<div class="ev allday${cal}">${esc(e.title)}</div>`;
+      // Couleur réelle de Google Agenda (API) : bordure pleine, fond translucide.
+      const style = e.color ? ` style="border-left-color:${e.color};background:${rgba(e.color, e.all_day ? .45 : .30)}"` : "";
+      if (e.all_day) {
+        const t = e.task ? " task" + (e.done ? " done" : "") : "";
+        return `<div class="ev allday${cal}${t}"${style}>${e.task ? "✓ " : ""}${esc(e.title)}</div>`;
+      }
       const s = new Date(e.start), en = new Date(e.end);
       const task = en - s === 0;                     // sans durée : tâche ou rappel
       const state = (task ? now >= s : now >= s && now < en) ? (task ? "done" : "now") : now >= en ? "done" : "";
       const loc = e.location ? `<span class="loc">${esc(e.location.split(",")[0])}</span>` : "";
-      return `<div class="ev ${state}${cal}${task ? " task" : ""}"><span class="t">${pad(s.getHours())}:${pad(s.getMinutes())}</span>` +
+      return `<div class="ev ${state}${cal}${task ? " task" : ""}"${style}><span class="t">${pad(s.getHours())}:${pad(s.getMinutes())}</span>` +
              `${esc(e.title)}${loc}</div>`;
     }).join("") || '<span class="empty">—</span>';
     return `<div class="${cls}"><h3>${fmt(d, { weekday: "short" }).replace(".", "").toUpperCase()}` +

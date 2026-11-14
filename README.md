@@ -97,6 +97,27 @@ sauf la météo (Open-Meteo, gratuit, sans clé).
 Pour l'essayer seul dans un navigateur : `python3 stats.py`, puis
 http://127.0.0.1:8765/stats.html
 
+### Agenda en direct : `calendar?google=1` (API Google, recommandé)
+
+Lit directement Google Agenda (mis à jour toutes les 2 minutes), avec les vraies couleurs
+de tes agendas et événements, et tes tâches Google Tasks (en orange). Lecture seule.
+
+1. console.cloud.google.com → choisis ou crée un projet.
+2. « API et services » → **Bibliothèque** : active **Google Calendar API** et **Google Tasks API**.
+3. **Google Auth Platform** (ou « Écran de consentement OAuth ») : type **Externe**, ajoute
+   ton adresse Gmail dans **Utilisateurs test**, puis passe l'application **En production**
+   (sinon Google te redemande l'autorisation tous les 7 jours).
+4. **Clients** (ou « Identifiants ») → **Créer un client OAuth** → type **Application de
+   bureau** → télécharge le JSON et enregistre-le sous
+   `~/.config/clearmint-welcome/google-oauth-client.json`.
+5. `python3 gcal.py login` (autorise dans le navigateur ; l'avertissement « application non
+   validée » est normal pour un usage perso : *Paramètres avancés → Accéder à…*).
+6. `python3 gcal.py test` : liste tes agendas et la semaine.
+
+Dans `layers.json` : `"url": "calendar?google=1&from=today"`. Options : `tasks=0` (sans les
+tâches), et tu peux ajouter des agendas iCal : `calendar?google=1&ics=…`.
+Déconnexion : `python3 gcal.py logout`.
+
 ### Agenda : `calendar`
 
 Dans Google Agenda (navigateur) : **⚙ Paramètres → ton agenda → Intégrer l'agenda →
