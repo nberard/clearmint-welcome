@@ -23,6 +23,7 @@ import os
 import signal
 import sys
 import time
+from urllib.parse import urlsplit
 
 
 def log_to_file():
@@ -52,7 +53,7 @@ gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 gi.require_version("WebKit2", "4.1")
 gi.require_version("Secret", "1")
-from gi.repository import Gdk, GLib, Gtk, Secret, WebKit2
+from gi.repository import Gdk, Gio, GLib, Gtk, Secret, WebKit2
 gi.require_foreign("cairo")
 
 import layers as L  # noqa: E402
@@ -109,6 +110,7 @@ class Auth:
         self.known = {}      # host -> (user, password) pour cette session
         self.pending = {}    # host -> [requêtes en attente]
         self.queue = []      # sites en attente de la fenêtre de connexion
+        self.declined = set()  # sites où l'utilisateur a annulé : pas de nouvel essai
         self.dialog = None
 
     def on_authenticate(self, _view, request):
@@ -190,9 +192,11 @@ class Auth:
         self.dialog = None
         requests = self.pending.pop(host, [])
         if response != Gtk.ResponseType.OK or not user:
+            self.declined.add(host)
             for r in requests:
                 r.cancel()
         else:
+            self.declined.discard(host)
             self.users[host] = user
             self.known[host] = (user, password)
             if remember.get_active():
@@ -236,6 +240,67 @@ def install_css():
         Gdk.Screen.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
 
+RETRIES = []
+
+
+class Retry:
+    """Recharge une page qui n'a pas pu se charger, avec une attente croissante
+    (5 s, 10 s, 20 s... jusqu'à 5 min), et tout de suite quand le réseau revient.
+
+    Au démarrage de la session, le réseau n'est souvent pas encore prêt.
+    """
+
+    def __init__(self, view, url, auth, name):
+        self.view, self.url, self.auth, self.name = view, url, auth, name
+        self.attempt, self.failed, self.timer = 0, False, None
+        view.connect("load-failed", self.on_failed)
+        view.connect("load-changed", self.on_changed)
+        RETRIES.append(self)
+
+    def on_failed(self, _view, _event, _uri, _error):
+        if urlsplit(self.url).hostname in self.auth.declined:
+            return False  # connexion annulée par l'utilisateur
+        self.failed = True
+        if self.timer is None:
+            delay = min(300, 5 * 2 ** self.attempt)
+            self.attempt += 1
+            print(f"[{self.name}] nouvel essai dans {delay} s")
+            self.timer = GLib.timeout_add_seconds(delay, self.reload)
+        return False
+
+    def on_changed(self, _view, event):
+        # La page d'erreur de WebKit se « charge » aussi : on ne remet le compteur à
+        # zéro que si aucun échec n'a été signalé depuis le dernier essai.
+        if event == WebKit2.LoadEvent.FINISHED and not self.failed:
+            self.attempt = 0
+
+    def reload(self):
+        self.timer = None
+        self.failed = False
+        self.view.load_uri(self.url)
+        return False
+
+    def network_back(self):
+        if self.failed:
+            if self.timer is not None:
+                GLib.source_remove(self.timer)
+                self.timer = None
+            print(f"[{self.name}] réseau revenu : rechargement")
+            self.attempt = 0
+            self.reload()
+
+
+def watch_network():
+    monitor = Gio.NetworkMonitor.get_default()
+
+    def changed(_monitor, available):
+        if available:
+            for r in RETRIES:
+                r.network_back()
+
+    monitor.connect("network-changed", changed)
+
+
 def connect_view(view, auth, name):
     view.connect("authenticate", auth.on_authenticate)
     view.connect("load-changed", on_load_changed, name)
@@ -254,6 +319,7 @@ def make_view(layer, context, auth, name):
     if layer.zoom != 1:
         view.set_zoom_level(layer.zoom)
     connect_view(view, auth, name)
+    Retry(view, layer.url, auth, name)
     if layer.refresh:
         GLib.timeout_add_seconds(layer.refresh, lambda: (view.reload(), True)[1])
     view.load_uri(layer.url)
@@ -443,6 +509,7 @@ def main():
             layer.url = base + layer.url[len(L.BUILTIN):]
 
     install_css()
+    watch_network()
     auth = Auth(users)
     context = make_context()
     display = Gdk.Display.get_default()

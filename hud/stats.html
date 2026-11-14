@@ -226,7 +226,9 @@ async function weather() {
     $("w-desc").textContent = desc + " · " + Math.round(c.wind_speed_10m) + " km/h";
     $("w-place").textContent = where.name;
   } catch (e) {
+    // Souvent au démarrage, avant que le réseau soit prêt : on réessaie dans 30 s.
     $("w-desc").textContent = "météo indisponible";
+    setTimeout(weather, 30 * 1000);
   }
 }
 weather();
