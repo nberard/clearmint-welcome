@@ -69,7 +69,7 @@ noms (voir `layers.example.json`).
 | `stats` | météo, CPU, mémoire, réseau, disques |
 | `clock` | heure, date, salutation (`clock?name=Nico`), infos système, batterie |
 | `procs` | programmes les plus gourmands en CPU et en mémoire |
-| `grid` | fond animé (opaque) : à mettre en premier |
+| `grid` | fond style HUD (opaque) : à mettre en premier. Fixe par défaut ; `grid?anim=1` l'anime (plus gourmand) |
 | `calendar` | semaine de l'agenda : `calendar?ics=<adresse iCal>` (voir plus bas) |
 | `news` | Google News + vidéos de tes abonnements YouTube (voir plus bas) |
 

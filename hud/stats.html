@@ -207,7 +207,8 @@ async function tick() {
     document.body.classList.add("offline");
   }
 }
-setInterval(tick, 1000);
+// Rafraîchissement toutes les 2 s par défaut (stats?every=1 pour chaque seconde).
+setInterval(tick, 1000 * Math.max(1, +(params.get("every") || 2)));
 tick();
 
 // ----------------------------------------------------------------- météo (Open-Meteo, sans clé)

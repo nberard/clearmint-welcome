@@ -253,7 +253,7 @@ class Sampler(threading.Thread):
     def run(self):
         prev_cpu, prev_net, prev_disk, prev_t = cpu_times(), net_bytes(), disk_bytes(), time.time()
         prev_cores = core_times()
-        prev_procs, prev_procs_t, procs, tick = process_times(), time.time(), {}, 0
+        prev_procs, prev_procs_t, procs, tick, system = process_times(), time.time(), {}, 0, {}
         while True:
             time.sleep(self.interval)
             cpu, net, disk, now = cpu_times(), net_bytes(), disk_bytes(), time.time()
@@ -275,12 +275,14 @@ class Sampler(threading.Thread):
                          "mounts": mounts()},
             }
             tick += 1
-            if tick % 2 == 0:  # processus : toutes les 2 s, c'est la mesure la plus lourde
+            if tick % 4 == 1:  # processus : toutes les 4 s, c'est la mesure la plus lourde
                 cur = process_times()
                 procs = top_processes(prev_procs, cur, max(now - prev_procs_t, 1e-3))
                 prev_procs, prev_procs_t = cur, now
             sample["procs"] = procs
-            sample["system"] = system_info()
+            if tick % 5 == 1 or not system:  # infos système : toutes les 5 s suffisent
+                system = system_info()
+            sample["system"] = system
             with self.lock:
                 self.latest = sample
             prev_cpu, prev_net, prev_disk, prev_t = cpu, net, disk, now

@@ -93,15 +93,18 @@ document.addEventListener("click", (e) => {
   if (it) fetch("/api/open?url=" + encodeURIComponent(it.dataset.url));
 });
 
-// Chaque colonne défile lentement ; elle s'arrête sous la souris.
+// Chaque colonne avance d'une demi-page toutes les 12 s (défilement doux, puis rien à
+// redessiner jusqu'au suivant : bien moins gourmand qu'un défilement continu).
+// Elle s'arrête sous la souris.
 for (const box of document.querySelectorAll(".scroll")) {
   let hover = false;
   box.addEventListener("mouseenter", () => { hover = true; });
   box.addEventListener("mouseleave", () => { hover = false; });
   setInterval(() => {
     if (hover || box.scrollHeight <= box.clientHeight) return;
-    box.scrollTop = box.scrollTop + box.clientHeight >= box.scrollHeight - 1 ? 0 : box.scrollTop + 1;
-  }, 70);
+    const end = box.scrollTop + box.clientHeight >= box.scrollHeight - 2;
+    box.scrollTo({ top: end ? 0 : box.scrollTop + box.clientHeight * 0.5, behavior: "smooth" });
+  }, 12000);
 }
 
 async function load() {

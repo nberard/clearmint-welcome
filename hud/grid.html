@@ -41,6 +41,9 @@
   }
   @keyframes scan { to { transform: translateY(calc(100vh + 120px)); } }
   .vignette { position: fixed; inset: 0; box-shadow: inset 0 0 220px 40px #000; }
+  /* Fond fixe par défaut (dessiné une seule fois) ; animé avec grid?anim=1, plus gourmand. */
+  body:not(.anim) .grid, body:not(.anim) .scan { animation: none; }
+  body:not(.anim) .scan { display: none; }
 </style>
 </head>
 <body>
@@ -49,5 +52,8 @@
   <div class="floor"></div>
   <div class="scan"></div>
   <div class="vignette"></div>
+<script>
+  if (new URLSearchParams(location.search).get("anim") === "1") document.body.classList.add("anim");
+</script>
 </body>
 </html>
