@@ -146,8 +146,16 @@ def access_token(force=False):
     if not force and tok.get("access_token") and tok.get("expiry", 0) > time.time() + 60:
         return tok["access_token"]
     client_id, client_secret = load_client()
-    new = _post(TOKEN_URL, {"client_id": client_id, "client_secret": client_secret,
-                            "refresh_token": tok["refresh_token"], "grant_type": "refresh_token"})
+    try:
+        new = _post(TOKEN_URL, {"client_id": client_id, "client_secret": client_secret,
+                                "refresh_token": tok["refresh_token"], "grant_type": "refresh_token"})
+    except RuntimeError as e:
+        if "invalid_grant" in str(e):
+            # Application en mode « Test » : Google expire l'autorisation au bout de 7 jours.
+            raise NotConfigured("autorisation Google expirée : relance « python3 gcal.py login » "
+                                "(en mode Test, elle expire tous les 7 jours : publie l'application "
+                                "dans Google Auth Platform pour l'éviter)")
+        raise
     tok.update(access_token=new["access_token"], expiry=time.time() + new.get("expires_in", 3600))
     save_token(tok)
     return tok["access_token"]

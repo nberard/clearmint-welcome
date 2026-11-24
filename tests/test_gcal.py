@@ -79,6 +79,16 @@ class OAuth(Config):
             self.assertEqual(p.call_count, 1)
 
 
+class Expired(Config):
+    def test_invalid_grant_gives_clear_message(self):
+        gcal.save_token({"access_token": "OLD", "refresh_token": "RT", "expiry": 0})
+        err = RuntimeError('Google a refusé (400) : {"error": "invalid_grant"}')
+        with mock.patch.object(gcal, "_post", side_effect=err):
+            with self.assertRaises(gcal.NotConfigured) as ctx:
+                gcal.access_token()
+        self.assertIn("gcal.py login", str(ctx.exception))
+
+
 class Convert(unittest.TestCase):
     def test_timed_event_with_own_colour(self):
         e = gcal.convert_event({"summary": "Réunion", "colorId": "6", "location": "Nîmes",

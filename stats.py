@@ -345,7 +345,10 @@ def api_calendar(q):
         hide = tuple(h for vals in q.get("hide", []) for h in vals.split(","))
 
         def google_week():
-            evs, errs = gcal.events_between(start, end, with_tasks=tasks, hide=hide)
+            try:
+                evs, errs = gcal.events_between(start, end, with_tasks=tasks, hide=hide)
+            except gcal.NotConfigured as e:
+                raise RuntimeError(str(e))  # message lisible, sans mise en cache
             return {"events": evs, "errors": errs}
 
         g = cached(("google", start.isoformat(), weeks, tasks, hide), google_week, ttl=120)
