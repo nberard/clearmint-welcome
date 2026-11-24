@@ -352,7 +352,11 @@ def api_calendar(q):
         out["events"] += g.get("events", [])
         out["errors"] += g.get("errors", [])
         if g.get("error"):
-            out["errors"].append(f"Google : {g['error']}")
+            err = g["error"]
+            if "Name or service not known" in err or "Temporary failure in name resolution" in err \
+                    or "Network is unreachable" in err:
+                err = "pas de connexion Internet pour l'instant (nouvel essai dans 30 s)"
+            out["errors"].append(f"Google : {err}")
         if g.get("stale"):
             out["stale"] = True
     out["events"].sort(key=lambda e: (e["start"][:10], not e["all_day"], e["start"]))

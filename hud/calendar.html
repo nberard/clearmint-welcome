@@ -105,14 +105,22 @@ function render() {
   }).join("");
 }
 
+let retry = null;
 async function load() {
+  let failed = false;
   try {
     data = await (await fetch("/api/calendar" + location.search, { cache: "no-store" })).json();
     document.body.classList.remove("offline");
+    failed = !!(data.error || (data.errors || []).length);
   } catch (e) {
     document.body.classList.add("offline");
+    failed = true;
   }
   render();
+  // Erreur (souvent : réseau pas encore prêt au démarrage) : nouvel essai dans 30 s
+  // au lieu d'attendre la mise à jour normale de 5 minutes.
+  clearTimeout(retry);
+  if (failed) retry = setTimeout(load, 30 * 1000);
 }
 load();
 setInterval(load, 5 * 60 * 1000);
